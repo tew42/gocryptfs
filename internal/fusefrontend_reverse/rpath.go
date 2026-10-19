@@ -153,6 +153,11 @@ func (rn *RootNode) openBackingDir(cPath string, ct childType) (dirfd int, pPath
 // plaintext name (-cfsext). Non-directories are shown as name+CfsExtSuffix,
 // directories unchanged. childAny probes the backing directory.
 func cfsExtName(dirfd int, cName string, ct childType) (string, error) {
+	// Readdir skips names that get too long with the suffix, so lookups
+	// must not resolve them either.
+	if len(cName) > unix.NAME_MAX {
+		return "", syscall.ENAMETOOLONG
+	}
 	stripped, ok := strings.CutSuffix(cName, fusefrontend.CfsExtSuffix)
 	switch ct {
 	case childDir:

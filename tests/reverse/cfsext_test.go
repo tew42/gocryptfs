@@ -142,4 +142,7 @@ func TestCfsExtTooLong(t *testing.T) {
 	if _, err := os.Lstat(mnt + "/" + name252); !errors.Is(err, syscall.ENOENT) {
 		t.Errorf("%d-byte name without suffix: want ENOENT, got %v", len(name252), err)
 	}
+	if _, err := os.Lstat(mnt + "/" + name252 + ".cfs"); !errors.Is(err, syscall.ENAMETOOLONG) {
+		t.Errorf("%d-byte name with suffix: want ENAMETOOLONG, got %v", len(name252), err)
+	}
 }
