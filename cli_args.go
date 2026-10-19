@@ -27,7 +27,7 @@ import (
 // argContainer stores the parsed CLI options and arguments
 type argContainer struct {
 	debug, init, zerokey, fusedebug, openssl, passwd, fg, version,
-	plaintextnames, quiet, nosyslog, wpanic,
+	plaintextnames, cfsext, quiet, nosyslog, wpanic,
 	longnames, allow_other, reverse, aessiv, nonempty, raw64,
 	noprealloc, readdirplus, speed, hkdf, serialize_reads, hh, info,
 	sharedstorage, fsck, one_file_system, deterministic_names,
@@ -166,6 +166,7 @@ func parseCliOpts(osArgs []string) (args argContainer) {
 	flagSet.BoolVar(&args.fg, "fg", false, "Stay in the foreground")
 	flagSet.BoolVar(&args.version, "version", false, "Print version and exit")
 	flagSet.BoolVar(&args.plaintextnames, "plaintextnames", false, "Do not encrypt file names")
+	flagSet.BoolVar(&args.cfsext, "cfsext", false, "Store files (not directories) as NAME.cfs in CIPHERDIR (with -init -plaintextnames)")
 	flagSet.BoolVar(&args.quiet, "q", false, "")
 	flagSet.BoolVar(&args.quiet, "quiet", false, "Quiet - silence informational messages")
 	flagSet.BoolVar(&args.nosyslog, "nosyslog", false, "Do not redirect output to syslog when running in the background")
@@ -309,6 +310,10 @@ func parseCliOpts(osArgs []string) (args argContainer) {
 	}
 	if args.longnamemax > 0 && args.longnamemax < 62 {
 		tlog.Fatal.Printf("-longnamemax: value %d is outside allowed range 62 ... 255", args.longnamemax)
+		os.Exit(exitcodes.Usage)
+	}
+	if args.cfsext && !args.plaintextnames {
+		tlog.Fatal.Printf("-cfsext requires -plaintextnames")
 		os.Exit(exitcodes.Usage)
 	}
 

@@ -155,6 +155,45 @@ func TestCreateConfLongNameMax(t *testing.T) {
 	}
 }
 
+func TestCreateConfCfsExt(t *testing.T) {
+	args := &CreateArgs{
+		Filename:       "config_test/tmp.conf",
+		Password:       testPw,
+		LogN:           10,
+		Creator:        "test",
+		PlaintextNames: true,
+		CfsExt:         true,
+	}
+	err := Create(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, c, err := LoadAndDecrypt("config_test/tmp.conf", testPw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.IsFeatureFlagSet(FlagCfsExt) {
+		t.Error("FlagCfsExt should be set but is not")
+	}
+	if !c.IsFeatureFlagSet(FlagPlaintextNames) {
+		t.Error("FlagPlaintextNames should be set but is not")
+	}
+}
+
+// CfsExt without PlaintextNames must be rejected
+func TestCreateConfCfsExtWithoutPlaintextNames(t *testing.T) {
+	err := Create(&CreateArgs{
+		Filename: "config_test/tmp.conf",
+		Password: testPw,
+		LogN:     10,
+		Creator:  "test",
+		CfsExt:   true,
+	})
+	if err == nil {
+		t.Error("Create should have failed for CfsExt without PlaintextNames")
+	}
+}
+
 func TestIsFeatureFlagKnown(t *testing.T) {
 	// Test a few hardcoded values
 	testKnownFlags := []string{"DirIV", "PlaintextNames", "EMENames", "GCMIV128", "LongNames", "AESSIV"}

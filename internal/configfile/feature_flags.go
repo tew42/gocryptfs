@@ -38,6 +38,8 @@ const (
 	FlagFIDO2
 	// FlagXChaCha20Poly1305 means we use XChaCha20-Poly1305 file content encryption
 	FlagXChaCha20Poly1305
+	// FlagCfsExt means non-directory entries are stored as NAME.cfs. Requires PlaintextNames.
+	FlagCfsExt
 )
 
 // knownFlags stores the known feature flags and their string representation
@@ -53,6 +55,7 @@ var knownFlags = map[flagIota]string{
 	FlagHKDF:              "HKDF",
 	FlagFIDO2:             "FIDO2",
 	FlagXChaCha20Poly1305: "XChaCha20Poly1305",
+	FlagCfsExt:            "CfsExt",
 }
 
 // isFeatureFlagKnown verifies that we understand a feature flag.

@@ -169,6 +169,19 @@ func TestParseCliOpts(t *testing.T) {
 	}...)
 
 	o = defaultArgs
+	o.plaintextnames = true
+	o.cfsext = true
+	testcases = append(testcases, []testcaseContainer{
+		{
+			i: []string{"gocryptfs", "-plaintextnames", "-cfsext"},
+			o: o,
+		}, {
+			i: []string{"gocryptfs", "-o", "plaintextnames,cfsext"},
+			o: o,
+		},
+	}...)
+
+	o = defaultArgs
 	o.exclude = []string{"foo", "bar", "baz,boe"}
 	testcases = append(testcases, []testcaseContainer{
 		{

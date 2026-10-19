@@ -286,11 +286,13 @@ func initFuseFrontend(args *argContainer) (rootNode fs.InodeEmbedder, wipeKeys f
 		OneFileSystem:      args.one_file_system,
 		DeterministicNames: args.deterministic_names,
 		NoXattr:            args.noxattr,
+		CfsExt:             args.cfsext,
 	}
 	// confFile is nil when "-zerokey" or "-masterkey" was used
 	if confFile != nil {
 		// Settings from the config file override command line args
 		frontendArgs.PlaintextNames = confFile.IsFeatureFlagSet(configfile.FlagPlaintextNames)
+		frontendArgs.CfsExt = confFile.IsFeatureFlagSet(configfile.FlagCfsExt)
 		frontendArgs.DeterministicNames = !confFile.IsFeatureFlagSet(configfile.FlagDirIV)
 		// Things that don't have to be in frontendArgs are only in args
 		args.longnamemax = confFile.LongNameMax

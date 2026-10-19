@@ -67,6 +67,9 @@ func (cf *ConfFile) Validate() error {
 		if cf.IsFeatureFlagSet(FlagEMENames) {
 			// All combinations of DirIV, LongNames, Raw64 allowed
 		}
+		if cf.IsFeatureFlagSet(FlagCfsExt) && !cf.IsFeatureFlagSet(FlagPlaintextNames) {
+			return fmt.Errorf("CfsExt requires PlaintextNames feature flag")
+		}
 		if cf.LongNameMax != 0 && !cf.IsFeatureFlagSet(FlagLongNameMax) {
 			return fmt.Errorf("LongNameMax=%d but the LongNameMax feature flag is NOT set", cf.LongNameMax)
 		}

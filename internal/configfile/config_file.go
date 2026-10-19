@@ -76,6 +76,7 @@ type CreateArgs struct {
 	XChaCha20Poly1305  bool
 	LongNameMax        uint8
 	Masterkey          []byte
+	CfsExt             bool
 }
 
 // Create - create a new config with a random key encrypted with
@@ -111,6 +112,9 @@ func Create(args *CreateArgs) error {
 		cf.setFeatureFlag(FlagEMENames)
 		cf.setFeatureFlag(FlagLongNames)
 		cf.setFeatureFlag(FlagRaw64)
+	}
+	if args.CfsExt {
+		cf.setFeatureFlag(FlagCfsExt)
 	}
 	if args.AESSIV {
 		cf.setFeatureFlag(FlagAESSIV)
