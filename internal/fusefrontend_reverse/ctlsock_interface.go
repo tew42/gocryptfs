@@ -3,10 +3,13 @@ package fusefrontend_reverse
 import (
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/rfjakob/gocryptfs/v2/internal/ctlsocksrv"
+	"github.com/rfjakob/gocryptfs/v2/internal/fusefrontend"
+	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
 )
 
 // Verify that the interface is implemented.
@@ -15,8 +18,22 @@ var _ ctlsocksrv.Interface = &RootNode{}
 // EncryptPath implements ctlsock.Backend.
 // This is used for the control socket and for the "-exclude" logic.
 func (rn *RootNode) EncryptPath(plainPath string) (string, error) {
-	if rn.args.PlaintextNames || plainPath == "" {
+	if (rn.args.PlaintextNames && !rn.args.CfsExt) || plainPath == "" {
 		return plainPath, nil
+	}
+	if rn.args.CfsExt {
+		// Directories keep their name, everything else (including
+		// entries that do not exist) gets CfsExtSuffix.
+		dirfd, err := syscallcompat.OpenDirNofollow(rn.args.Cipherdir, filepath.Dir(plainPath))
+		if err != nil {
+			return "", err
+		}
+		defer syscall.Close(dirfd)
+		st, err := syscallcompat.Fstatat2(dirfd, filepath.Base(plainPath), unix.AT_SYMLINK_NOFOLLOW)
+		if err == nil && st.Mode&syscall.S_IFMT == syscall.S_IFDIR {
+			return plainPath, nil
+		}
+		return plainPath + fusefrontend.CfsExtSuffix, nil
 	}
 	cipherPath := ""
 	parts := strings.Split(plainPath, "/")
@@ -36,6 +53,14 @@ func (rn *RootNode) EncryptPath(plainPath string) (string, error) {
 
 // DecryptPath implements ctlsock.Backend
 func (rn *RootNode) DecryptPath(cipherPath string) (string, error) {
+	if rn.args.CfsExt && cipherPath != "" {
+		dirfd, pPath, err := rn.openBackingDir(cipherPath, childAny)
+		if err != nil {
+			return "", err
+		}
+		syscall.Close(dirfd)
+		return pPath, nil
+	}
 	p, err := rn.decryptPath(cipherPath)
 	return p, err
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rfjakob/gocryptfs/v2/internal/configfile"
 	"github.com/rfjakob/gocryptfs/v2/internal/cryptocore"
+	"github.com/rfjakob/gocryptfs/v2/internal/fusefrontend"
 	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
 	"github.com/rfjakob/gocryptfs/v2/internal/tlog"
@@ -92,6 +93,9 @@ func (n *Node) Readdir(ctx context.Context) (stream fs.DirStream, errno syscall.
 
 func (n *Node) readdirPlaintextnames(entries []fuse.DirEntry) (stream fs.DirStream, errno syscall.Errno) {
 	rn := n.rootNode()
+	if rn.args.CfsExt {
+		entries = n.cfsExtEntries(entries)
+	}
 	// If we are not the root dir or a custom config path was used, we don't
 	// need to map anything
 	if !n.isRoot() || rn.args.ConfigCustom {
@@ -115,4 +119,27 @@ func (n *Node) readdirPlaintextnames(entries []fuse.DirEntry) (stream fs.DirStre
 		entries[dupe].Name = "gocryptfs.conf_NAME_COLLISION_" + fmt.Sprintf("%d", cryptocore.RandUint64())
 	}
 	return fs.NewListDirStream(entries), 0
+}
+
+// cfsExtEntries appends CfsExtSuffix to the names of all non-directory
+// entries (-cfsext). Entries whose name gets too long are dropped.
+// ".gocryptfs.reverse.conf" in the root dir is left alone because
+// readdirPlaintextnames maps it to "gocryptfs.conf".
+func (n *Node) cfsExtEntries(entries []fuse.DirEntry) []fuse.DirEntry {
+	rn := n.rootNode()
+	mapConf := n.isRoot() && !rn.args.ConfigCustom
+	filtered := entries[:0]
+	for _, entry := range entries {
+		if entry.Mode&syscall.S_IFMT != syscall.S_IFDIR &&
+			!(mapConf && entry.Name == configfile.ConfReverseName) {
+			cName := entry.Name + fusefrontend.CfsExtSuffix
+			if len(cName) > unix.NAME_MAX {
+				tlog.Warn.Printf("Readdir: skipping %q: name too long with %s suffix", entry.Name, fusefrontend.CfsExtSuffix)
+				continue
+			}
+			entry.Name = cName
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }

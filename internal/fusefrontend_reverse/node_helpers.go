@@ -70,11 +70,14 @@ type dirfdPlus struct {
 // If `child` is empty, the (dirfd, cName) pair refers to this node itself.
 func (n *Node) prepareAtSyscall(child string) (d *dirfdPlus, errno syscall.Errno) {
 	cPath := n.Path()
+	// -cfsext type hint: we know our own type, but not the child's
+	ct := childTypeOf(n.IsDir())
 	if child != "" {
 		cPath = filepath.Join(cPath, child)
+		ct = childAny
 	}
 	rn := n.rootNode()
-	dirfd, pPath, err := rn.openBackingDir(cPath)
+	dirfd, pPath, err := rn.openBackingDir(cPath, ct)
 	if err != nil {
 		errno = fs.ToErrno(err)
 	}
