@@ -114,9 +114,11 @@ symlink targets are unchanged. Example: `docs/report.txt` is stored as
 Plaintext names are limited to 251 bytes. Non-directory entries without
 the `.cfs` suffix are not shown in the mount (`-fsck` reports them).
 `RENAME_EXCHANGE` between a directory and a non-directory fails with EINVAL.
-A file `X` and a directory `X.cfs` cannot coexist in the same directory
-because both would be stored as `X.cfs`; creating the second one fails with
-EEXIST.
+Directory names must not end in `.cfs`; mkdir and rename return EINVAL for
+such names. If the cipher directory is written by more than one mount at the
+same time (e.g. when it is synced between machines), a file and a directory
+of the same name can both appear; the file wins, the directory is hidden and
+`-fsck` reports it.
 
 The resulting `gocryptfs.conf` has "CfsExt" in "FeatureFlags"; older
 gocryptfs versions cannot mount it.

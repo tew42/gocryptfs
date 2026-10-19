@@ -17,6 +17,7 @@ import (
 
 	"github.com/rfjakob/gocryptfs/v2/ctlsock"
 	"github.com/rfjakob/gocryptfs/v2/internal/configfile"
+	"github.com/rfjakob/gocryptfs/v2/internal/exitcodes"
 	"github.com/rfjakob/gocryptfs/v2/tests/test_helpers"
 )
 
@@ -170,6 +171,8 @@ func TestReaddir(t *testing.T) {
 	}
 }
 
+// A file may be named *.cfs (it is stored as *.cfs.cfs), a directory may not:
+// a cipher name ends in .cfs if and only if it is not a directory.
 func TestNamesEndingInCfs(t *testing.T) {
 	content := []byte("x.cfs content")
 	if err := os.WriteFile(pDir+"/x.cfs", content, 0600); err != nil {
@@ -179,22 +182,48 @@ func TestNamesEndingInCfs(t *testing.T) {
 		t.Error("x.cfs.cfs is not a regular file")
 	}
 	mustNotExist(t, cDir+"/x.cfs")
-	if err := os.Mkdir(pDir+"/d.cfs", 0700); err != nil {
-		t.Fatal(err)
-	}
-	if !mustExist(t, cDir+"/d.cfs").IsDir() {
-		t.Error("cipher d.cfs is not a directory")
-	}
-	mustNotExist(t, cDir+"/d.cfs.cfs")
 	got, err := os.ReadFile(pDir + "/x.cfs")
 	if err != nil || !bytes.Equal(got, content) {
 		t.Errorf("ReadFile: %q, %v", got, err)
 	}
-	if _, err := os.ReadDir(pDir + "/d.cfs"); err != nil {
-		t.Error(err)
+	if !test_helpers.VerifyExistence(t, pDir+"/x.cfs") {
+		t.Error("x.cfs not visible")
 	}
-	if !test_helpers.VerifyExistence(t, pDir+"/x.cfs") || !test_helpers.VerifyExistence(t, pDir+"/d.cfs") {
-		t.Error("x.cfs or d.cfs not visible")
+	// mkdir of a name ending in .cfs
+	if err := os.Mkdir(pDir+"/d.cfs", 0700); !errors.Is(err, syscall.EINVAL) {
+		t.Errorf("mkdir d.cfs: want EINVAL, got %v", err)
+	}
+	mustNotExist(t, cDir+"/d.cfs")
+	mustNotExist(t, pDir+"/d.cfs")
+	// Renaming a directory to a name ending in .cfs
+	if err := os.Mkdir(pDir+"/dren", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(pDir+"/dren", pDir+"/dren.cfs"); !errors.Is(err, syscall.EINVAL) {
+		t.Errorf("rename dren -> dren.cfs: want EINVAL, got %v", err)
+	}
+	if !mustExist(t, pDir+"/dren").IsDir() {
+		t.Error("dren is not a directory")
+	}
+	if !mustExist(t, cDir+"/dren").IsDir() {
+		t.Error("cipher dren is not a directory")
+	}
+	mustNotExist(t, cDir+"/dren.cfs")
+	// Renaming a file to a name ending in .cfs is fine
+	if err := os.WriteFile(pDir+"/fren", []byte("fren"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(pDir+"/fren", pDir+"/fren.cfs"); err != nil {
+		t.Fatalf("rename fren -> fren.cfs: %v", err)
+	}
+	if !mustExist(t, cDir+"/fren.cfs.cfs").Mode().IsRegular() {
+		t.Error("fren.cfs.cfs is not a regular file")
+	}
+	mustNotExist(t, cDir+"/fren.cfs")
+	mustNotExist(t, pDir+"/fren")
+	got, err = os.ReadFile(pDir + "/fren.cfs")
+	if err != nil || string(got) != "fren" {
+		t.Errorf("ReadFile fren.cfs: %q, %v", got, err)
 	}
 }
 
@@ -419,13 +448,21 @@ func TestConfWins(t *testing.T) {
 	mustNotExist(t, c+"/name")
 }
 
-// Non-directory cipher entries without suffix are hidden (with a warning,
-// hence -wpanic=0). When both "a" (dir) and "a.cfs" (file) exist, the file wins.
+// Non-directory cipher entries without suffix and directories ending in .cfs
+// are hidden (with a warning, hence -wpanic=0). When both "a" (dir) and
+// "a.cfs" (file) exist, the file wins and the directory is hidden.
+// -fsck reports all of them.
 func TestHiddenEntries(t *testing.T) {
 	c3 := test_helpers.InitFS(t, "-plaintextnames", "-cfsext")
 	p3 := c3 + ".mnt"
 	test_helpers.MountOrFatal(t, c3, p3, "-extpass", "echo test", "-wpanic=0")
-	defer test_helpers.UnmountPanic(p3)
+	// Unmounted explicitly before fsck; this only cleans up after t.Fatal
+	mounted := true
+	defer func() {
+		if mounted {
+			test_helpers.UnmountPanic(p3)
+		}
+	}()
 	if err := os.WriteFile(c3+"/plain.txt", []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -438,6 +475,10 @@ func TestHiddenEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(c3+"/a", 0700); err != nil {
+		t.Fatal(err)
+	}
+	// A directory ending in .cfs can only be created out of band
+	if err := os.Mkdir(c3+"/h.cfs", 0700); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Lstat(p3 + "/a")
@@ -454,20 +495,43 @@ func TestHiddenEntries(t *testing.T) {
 	if _, err := os.Stat(p3 + "/plain.txt"); !errors.Is(err, syscall.ENOENT) {
 		t.Errorf("plain.txt: want ENOENT, got %v", err)
 	}
+	if _, err := os.Stat(p3 + "/h.cfs"); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("h.cfs: want ENOENT, got %v", err)
+	}
 	entries, err := os.ReadDir(p3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	haveA := false
+	nA := 0
 	for _, e := range entries {
-		if e.Name() == "plain.txt" {
-			t.Error("plain.txt should be hidden")
-		}
-		if e.Name() == "a" {
-			haveA = true
+		switch e.Name() {
+		case "plain.txt", "h.cfs":
+			t.Errorf("%q should be hidden", e.Name())
+		case "a":
+			nA++
 		}
 	}
-	if !haveA {
-		t.Errorf("a is not listed: %v", entries)
+	if nA != 1 {
+		t.Errorf("a should be listed exactly once, found %d times: %v", nA, entries)
+	}
+	if fi, err := os.Lstat(p3 + "/a"); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("a after readdir: want regular file, got fi=%v err=%v", fi, err)
+	}
+
+	// fsck mounts the filesystem itself
+	test_helpers.UnmountPanic(p3)
+	mounted = false
+	cmd := exec.Command(test_helpers.GocryptfsBinary, "-fsck", "-extpass", "echo test", c3)
+	out, err := cmd.CombinedOutput()
+	if code := test_helpers.ExtractCmdExitCode(err); code != exitcodes.FsckErrors {
+		t.Errorf("fsck: want exit code %d, got %d", exitcodes.FsckErrors, code)
+	}
+	for _, want := range []string{"plain.txt", "shadowed", "h.cfs"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("fsck output does not mention %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Log(string(out))
 	}
 }

@@ -2,6 +2,7 @@ package fusefrontend
 
 import (
 	"context"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -482,6 +483,9 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 			ct, errno := n.childTypeCfsExt(dirfd, name)
 			if errno != 0 {
 				return errno
+			}
+			if ct == childDir && strings.HasSuffix(newName, CfsExtSuffix) {
+				return syscall.EINVAL
 			}
 			// The whiteout left for a directory would be an unsuffixed char device
 			if flags&syscallcompat.RENAME_WHITEOUT != 0 && ct == childDir {

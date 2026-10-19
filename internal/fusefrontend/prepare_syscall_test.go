@@ -229,6 +229,17 @@ func TestPrepareAtSyscallCfsExt(t *testing.T) {
 	if errno != syscall.ENOENT {
 		t.Errorf("nope: want ENOENT, got %v", errno)
 	}
+	// A suffixed name is never a directory
+	if err := os.Mkdir(cipherdir+"/d.cfs", 0700); err != nil {
+		t.Fatal(err)
+	}
+	_, _, errno = rn.resolveChildCfsExt(dirfd, "d.cfs")
+	if errno != syscall.ENOENT {
+		t.Errorf("d.cfs: want ENOENT, got %v", errno)
+	}
+	if _, errno = rn.Mkdir(context.TODO(), "x.cfs", 0700, out); errno != syscall.EINVAL {
+		t.Errorf("Mkdir x.cfs: want EINVAL, got %v", errno)
+	}
 
 	// Lookup
 	ch, errno := rn.Lookup(context.TODO(), "f", &fuse.EntryOut{})

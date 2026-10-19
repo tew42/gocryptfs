@@ -38,11 +38,16 @@ func (rn *RootNode) cNameCfsExt(name string, ct childType) string {
 }
 
 // resolveChildCfsExt finds the cipher entry for plaintext `name` in `dirfd`:
-// "name.cfs" if it is not a directory, else "name" if it is a directory.
+// "name.cfs" if it is not a directory, else "name" if it is a directory
+// and does not end in ".cfs".
 func (rn *RootNode) resolveChildCfsExt(dirfd int, name string) (cName string, st *syscall.Stat_t, errno syscall.Errno) {
 	st, err := syscallcompat.Fstatat2(dirfd, name+CfsExtSuffix, unix.AT_SYMLINK_NOFOLLOW)
 	if err == nil && uint32(st.Mode)&syscall.S_IFMT != syscall.S_IFDIR {
 		return name + CfsExtSuffix, st, 0
+	}
+	if strings.HasSuffix(name, CfsExtSuffix) {
+		// A suffixed name is never a directory
+		return "", nil, syscall.ENOENT
 	}
 	st, err = syscallcompat.Fstatat2(dirfd, name, unix.AT_SYMLINK_NOFOLLOW)
 	if err != nil {
@@ -68,8 +73,12 @@ func (n *Node) childTypeCfsExt(dirfd int, name string) (childType, syscall.Errno
 
 // plainNameCfsExt returns the plaintext name of cipher entry `cName` with
 // file type `mode`, or false if the entry must be hidden.
+// Directories ending in ".cfs" are hidden.
 func plainNameCfsExt(cName string, mode uint32) (string, bool) {
 	if mode&syscall.S_IFMT == syscall.S_IFDIR {
+		if strings.HasSuffix(cName, CfsExtSuffix) {
+			return "", false
+		}
 		return cName, true
 	}
 	name, ok := strings.CutSuffix(cName, CfsExtSuffix)
@@ -77,4 +86,11 @@ func plainNameCfsExt(cName string, mode uint32) (string, bool) {
 		return "", false
 	}
 	return name, true
+}
+
+// cfsExtShadowed returns true if directory `cName` is shadowed by a
+// non-directory "cName.cfs" (which wins in Lookup).
+func (f *File) cfsExtShadowed(cName string) bool {
+	st, err := syscallcompat.Fstatat2(f.intFd(), cName+CfsExtSuffix, unix.AT_SYMLINK_NOFOLLOW)
+	return err == nil && uint32(st.Mode)&syscall.S_IFMT != syscall.S_IFDIR
 }

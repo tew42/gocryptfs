@@ -106,13 +106,14 @@ func TestCfsExtView(t *testing.T) {
 	}
 }
 
-// TestCfsExtTooLong checks that a name that becomes longer than 255 bytes
-// with the ".cfs" suffix is skipped in the encrypted view.
-func TestCfsExtTooLong(t *testing.T) {
+// TestCfsExtNotRepresentable checks that entries that cannot be shown with
+// -cfsext are skipped in the encrypted view: names that become longer than
+// 255 bytes with the ".cfs" suffix, and directories whose name ends in ".cfs".
+func TestCfsExtNotRepresentable(t *testing.T) {
 	if !cfsext {
 		t.Skip("only for -cfsext")
 	}
-	// Skipping the long name logs a warning, so we need -wpanic=0
+	// Skipping an entry logs a warning, so we need -wpanic=0
 	backingDir, mnt, _ := newReverseFS([]string{"-wpanic=0"})
 	defer func() {
 		test_helpers.UnmountPanic(mnt)
@@ -144,5 +145,36 @@ func TestCfsExtTooLong(t *testing.T) {
 	}
 	if _, err := os.Lstat(mnt + "/" + name252 + ".cfs"); !errors.Is(err, syscall.ENAMETOOLONG) {
 		t.Errorf("%d-byte name with suffix: want ENAMETOOLONG, got %v", len(name252), err)
+	}
+
+	// Directory "x.cfs" next to file "x": "x.cfs" in the encrypted view is
+	// the file. Directory "y.cfs" alone is not visible at all.
+	if err := os.Mkdir(backingDir+"/x.cfs", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(backingDir+"/x", []byte("file x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(backingDir+"/y.cfs", 0700); err != nil {
+		t.Fatal(err)
+	}
+	names = readdirNames(t, mnt)
+	nX := 0
+	for _, n := range names {
+		switch n {
+		case "x.cfs":
+			nX++
+		case "y.cfs":
+			t.Errorf("%q should not be listed", n)
+		}
+	}
+	if nX != 1 {
+		t.Errorf("x.cfs should be listed exactly once, found %d times: %q", nX, names)
+	}
+	if fi, err := os.Lstat(mnt + "/x.cfs"); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("x.cfs should be the regular file x: fi=%v err=%v", fi, err)
+	}
+	if _, err := os.Lstat(mnt + "/y.cfs"); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("y.cfs: want ENOENT, got %v", err)
 	}
 }

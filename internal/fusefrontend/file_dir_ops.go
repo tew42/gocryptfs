@@ -152,9 +152,14 @@ func (f *File) Readdirent(ctx context.Context) (entry *fuse.DirEntry, errno sysc
 				}
 				entry.Mode = uint32(st.Mode) & syscall.S_IFMT
 			}
+			if entry.Mode&syscall.S_IFMT == syscall.S_IFDIR && f.cfsExtShadowed(cName) {
+				tlog.Warn.Printf("Readdirent: hiding directory %q: shadowed by %q", cName, cName+CfsExtSuffix)
+				f.rootNode.reportMitigatedCorruption(cName)
+				continue
+			}
 			name, ok := plainNameCfsExt(cName, entry.Mode)
 			if !ok {
-				tlog.Warn.Printf("Readdirent: hiding %q: not a directory and no %s suffix", cName, CfsExtSuffix)
+				tlog.Warn.Printf("Readdirent: hiding %q: %s suffix does not match its file type", cName, CfsExtSuffix)
 				f.rootNode.reportMitigatedCorruption(cName)
 				continue
 			}

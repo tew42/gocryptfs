@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -70,13 +71,17 @@ func (n *Node) mkdirWithIv(dirfd int, cName string, mode uint32, context *fuse.C
 //
 // Symlink-safe through use of Mkdirat().
 func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	rn := n.rootNode()
+	// Directory names must not end in the -cfsext suffix
+	if rn.args.CfsExt && strings.HasSuffix(name, CfsExtSuffix) {
+		return nil, syscall.EINVAL
+	}
 	dirfd, cName, errno := n.prepareAtSyscall(name, childDir)
 	if errno != 0 {
 		return nil, errno
 	}
 	defer syscall.Close(dirfd)
 
-	rn := n.rootNode()
 	var context *fuse.Context
 	if rn.args.PreserveOwner {
 		context = toFuseCtx(ctx)
