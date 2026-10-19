@@ -4,6 +4,8 @@ import (
 	"context"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/rfjakob/gocryptfs/v2/internal/configfile"
@@ -138,6 +140,25 @@ func (f *File) Readdirent(ctx context.Context) (entry *fuse.DirEntry, errno sysc
 			continue
 		}
 		if f.rootNode.args.PlaintextNames {
+			if !f.rootNode.args.CfsExt {
+				return
+			}
+			if entry.Mode&syscall.S_IFMT == 0 {
+				// DT_UNKNOWN from the dirstream
+				st, err := syscallcompat.Fstatat2(f.intFd(), cName, unix.AT_SYMLINK_NOFOLLOW)
+				if err != nil {
+					// entry vanished
+					continue
+				}
+				entry.Mode = uint32(st.Mode) & syscall.S_IFMT
+			}
+			name, ok := plainNameCfsExt(cName, entry.Mode)
+			if !ok {
+				tlog.Warn.Printf("Readdirent: hiding %q: not a directory and no %s suffix", cName, CfsExtSuffix)
+				f.rootNode.reportMitigatedCorruption(cName)
+				continue
+			}
+			entry.Name = name
 			return
 		}
 		if !f.rootNode.args.DeterministicNames && cName == nametransform.DirIVFilename {

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/rfjakob/gocryptfs/v2/internal/ctlsocksrv"
 	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
@@ -18,8 +20,24 @@ var _ ctlsocksrv.Interface = &RootNode{} // Verify that interface is implemented
 //
 // Symlink-safe through openBackingDir().
 func (rn *RootNode) EncryptPath(plainPath string) (cipherPath string, err error) {
-	if rn.args.PlaintextNames || plainPath == "" {
+	if (rn.args.PlaintextNames && !rn.args.CfsExt) || plainPath == "" {
 		return plainPath, nil
+	}
+	if rn.args.CfsExt {
+		dirfd, err := syscallcompat.OpenDirNofollow(rn.args.Cipherdir, filepath.Dir(plainPath))
+		if err != nil {
+			return "", err
+		}
+		defer syscall.Close(dirfd)
+		base := filepath.Base(plainPath)
+		cName, _, errno := rn.resolveChildCfsExt(dirfd, base)
+		if errno == syscall.ENOENT {
+			// Missing leaf: assume a file
+			cName = base + CfsExtSuffix
+		} else if errno != 0 {
+			return "", errno
+		}
+		return filepath.Join(filepath.Dir(plainPath), cName), nil
 	}
 
 	dirfd, _, errno := rn.prepareAtSyscallMyself()
@@ -64,8 +82,26 @@ func (rn *RootNode) EncryptPath(plainPath string) (cipherPath string, err error)
 // DecryptPath is symlink-safe because openBackingDir() and decryptPathAt()
 // are symlink-safe.
 func (rn *RootNode) DecryptPath(cipherPath string) (plainPath string, err error) {
-	if rn.args.PlaintextNames || cipherPath == "" {
+	if (rn.args.PlaintextNames && !rn.args.CfsExt) || cipherPath == "" {
 		return cipherPath, nil
+	}
+	if rn.args.CfsExt {
+		dirfd, err := syscallcompat.OpenDirNofollow(rn.args.Cipherdir, filepath.Dir(cipherPath))
+		if err != nil {
+			return "", err
+		}
+		defer syscall.Close(dirfd)
+		base := filepath.Base(cipherPath)
+		mode := uint32(syscall.S_IFREG)
+		st, err := syscallcompat.Fstatat2(dirfd, base, unix.AT_SYMLINK_NOFOLLOW)
+		if err == nil {
+			mode = uint32(st.Mode) & syscall.S_IFMT
+		}
+		name, ok := plainNameCfsExt(base, mode)
+		if !ok {
+			return "", syscall.ENOENT
+		}
+		return filepath.Join(filepath.Dir(cipherPath), name), nil
 	}
 
 	dirfd, _, errno := rn.prepareAtSyscallMyself()

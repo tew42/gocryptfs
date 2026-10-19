@@ -22,16 +22,26 @@ type Node struct {
 
 // Lookup - FUSE call for discovering a file.
 func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (ch *fs.Inode, errno syscall.Errno) {
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childAny)
 	if errno != 0 {
 		return
 	}
 	defer syscall.Close(dirfd)
 
+	rn := n.rootNode()
 	// Get device number and inode number into `st`
-	st, err := syscallcompat.Fstatat2(dirfd, cName, unix.AT_SYMLINK_NOFOLLOW)
-	if err != nil {
-		return nil, fs.ToErrno(err)
+	var st *syscall.Stat_t
+	if rn.args.CfsExt {
+		cName, st, errno = rn.resolveChildCfsExt(dirfd, name)
+		if errno != 0 {
+			return nil, errno
+		}
+	} else {
+		var err error
+		st, err = syscallcompat.Fstatat2(dirfd, cName, unix.AT_SYMLINK_NOFOLLOW)
+		if err != nil {
+			return nil, fs.ToErrno(err)
+		}
 	}
 
 	// Create new inode and fill `out`
@@ -40,7 +50,6 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (ch 
 	// Translate ciphertext size in `out.Attr.Size` to plaintext size
 	out.Size = n.translateSize(dirfd, cName, out.Mode, out.Size)
 
-	rn := n.rootNode()
 	if rn.args.ForceOwner != nil {
 		out.Owner = *rn.args.ForceOwner
 	}
@@ -140,7 +149,7 @@ func (n *Node) Access(ctx context.Context, mode uint32) syscall.Errno {
 //
 // Symlink-safe through use of Unlinkat().
 func (n *Node) Unlink(ctx context.Context, name string) (errno syscall.Errno) {
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childNonDir)
 	if errno != 0 {
 		return
 	}
@@ -276,7 +285,7 @@ func (n *Node) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
 //
 // Symlink-safe through use of Mknodat().
 func (n *Node) Mknod(ctx context.Context, name string, mode, rdev uint32, out *fuse.EntryOut) (inode *fs.Inode, errno syscall.Errno) {
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childNonDir)
 	if errno != 0 {
 		return
 	}
@@ -331,7 +340,7 @@ func (n *Node) Mknod(ctx context.Context, name string, mode, rdev uint32, out *f
 //
 // Symlink-safe through use of Linkat().
 func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, out *fuse.EntryOut) (inode *fs.Inode, errno syscall.Errno) {
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childNonDir)
 	if errno != 0 {
 		return
 	}
@@ -381,7 +390,7 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 //
 // Symlink-safe through use of Symlinkat.
 func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (inode *fs.Inode, errno syscall.Errno) {
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childNonDir)
 	if errno != 0 {
 		return
 	}
@@ -453,14 +462,14 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		return errno
 	}
 
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childAny)
 	if errno != 0 {
 		return
 	}
 	defer syscall.Close(dirfd)
 
 	n2 := toNode(newParent)
-	dirfd2, cName2, errno := n2.prepareAtSyscall(newName)
+	dirfd2, cName2, errno := n2.prepareAtSyscall(newName, childAny)
 	if errno != 0 {
 		return
 	}
@@ -469,6 +478,28 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	// Easy case.
 	rn := n.rootNode()
 	if rn.args.PlaintextNames {
+		if rn.args.CfsExt {
+			ct, errno := n.childTypeCfsExt(dirfd, name)
+			if errno != 0 {
+				return errno
+			}
+			// The whiteout left for a directory would be an unsuffixed char device
+			if flags&syscallcompat.RENAME_WHITEOUT != 0 && ct == childDir {
+				return syscall.EINVAL
+			}
+			if flags&syscallcompat.RENAME_EXCHANGE != 0 {
+				ct2, errno := n2.childTypeCfsExt(dirfd2, newName)
+				if errno != 0 {
+					return errno
+				}
+				// Cannot swap atomically when the cipher names differ
+				if ct2 != ct {
+					return syscall.EINVAL
+				}
+			}
+			cName = rn.cNameCfsExt(name, ct)
+			cName2 = rn.cNameCfsExt(newName, ct)
+		}
 		return fs.ToErrno(syscallcompat.Renameat2(dirfd, cName, dirfd2, cName2, uint(flags)))
 	}
 	// Long destination file name: create .name file

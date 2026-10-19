@@ -70,7 +70,7 @@ func (n *Node) mkdirWithIv(dirfd int, cName string, mode uint32, context *fuse.C
 //
 // Symlink-safe through use of Mkdirat().
 func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childDir)
 	if errno != 0 {
 		return nil, errno
 	}
@@ -162,7 +162,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 // Symlink-safe through Unlinkat() + AT_REMOVEDIR.
 func (n *Node) Rmdir(ctx context.Context, name string) (code syscall.Errno) {
 	rn := n.rootNode()
-	parentDirFd, cName, errno := n.prepareAtSyscall(name)
+	parentDirFd, cName, errno := n.prepareAtSyscall(name, childDir)
 	if errno != 0 {
 		return errno
 	}

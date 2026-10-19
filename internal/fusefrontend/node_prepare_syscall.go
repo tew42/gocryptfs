@@ -14,7 +14,8 @@ import (
 // prepareAtSyscall returns a (dirfd, cName) pair that can be used
 // with the "___at" family of system calls (openat, fstatat, unlinkat...) to
 // access the backing encrypted child file.
-func (n *Node) prepareAtSyscall(child string) (dirfd int, cName string, errno syscall.Errno) {
+// `ct` is the type of `child` and selects the ".cfs" suffix with -cfsext.
+func (n *Node) prepareAtSyscall(child string, ct childType) (dirfd int, cName string, errno syscall.Errno) {
 	if child == "" {
 		tlog.Warn.Printf("BUG: prepareAtSyscall: child=%q, should have called prepareAtSyscallMyself", child)
 		return n.prepareAtSyscallMyself()
@@ -46,7 +47,7 @@ func (n *Node) prepareAtSyscall(child string) (dirfd int, cName string, errno sy
 	dirfd, iv = rn.dirCache.Lookup(n)
 	if dirfd > 0 {
 		if rn.args.PlaintextNames {
-			return dirfd, child, 0
+			return dirfd, rn.cNameCfsExt(child, ct), 0
 		}
 		var err error
 		cName, err = encryptName(dirfd, child, iv)
@@ -82,7 +83,7 @@ func (n *Node) prepareAtSyscall(child string) (dirfd int, cName string, errno sy
 	rn.dirCache.Store(n, dirfd, iv)
 
 	if rn.args.PlaintextNames {
-		return dirfd, child, 0
+		return dirfd, rn.cNameCfsExt(child, ct), 0
 	}
 
 	cName, err = encryptName(dirfd, child, iv)
@@ -116,5 +117,5 @@ func (n *Node) prepareAtSyscallMyself() (dirfd int, cName string, errno syscall.
 		return
 	}
 	parent := toNode(p1.Operations())
-	return parent.prepareAtSyscall(myName)
+	return parent.prepareAtSyscall(myName, childTypeOf(n.IsDir()))
 }

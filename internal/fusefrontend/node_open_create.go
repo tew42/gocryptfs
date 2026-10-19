@@ -83,7 +83,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 //
 // Symlink-safe through the use of Openat().
 func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (inode *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	dirfd, cName, errno := n.prepareAtSyscall(name)
+	dirfd, cName, errno := n.prepareAtSyscall(name, childNonDir)
 	if errno != 0 {
 		return
 	}
