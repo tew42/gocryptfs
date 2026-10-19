@@ -18,8 +18,14 @@ import (
 
 // TestLongnameStat checks that file names of all sizes (1 to 255) show up in
 // the decrypted reverse view (dirC, mounted in TestMain).
+// With -cfsext, names longer than 251 bytes cannot carry the ".cfs" suffix and
+// are not shown, so we only go up to 251.
 func TestLongnameStat(t *testing.T) {
-	for i := 1; i <= 255; i++ {
+	maxLen := 255
+	if cfsext {
+		maxLen = 255 - len(".cfs")
+	}
+	for i := 1; i <= maxLen; i++ {
 		name := string(bytes.Repeat([]byte("x"), i))
 		fd, err := os.Create(dirA + "/" + name)
 		if err != nil {
@@ -280,6 +286,9 @@ func TestSeekData(t *testing.T) {
 	f.Close()
 
 	fn2 := filepath.Join(dirB, t.Name())
+	if cfsext {
+		fn2 += ".cfs"
+	}
 	f, err = os.Open(fn2)
 	if err != nil {
 		t.Fatal(err)

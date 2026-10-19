@@ -29,6 +29,9 @@ func TestConfigCustomInsideCipherdir(t *testing.T) {
 	initArgs := []string{"-q", "-init", "-reverse", "-extpass", "echo test", "-scryptn=10", "-config", cfg}
 	if plaintextnames {
 		initArgs = append(initArgs, "-plaintextnames")
+		if cfsext {
+			initArgs = append(initArgs, "-cfsext")
+		}
 	} else if deterministic_names {
 		initArgs = append(initArgs, "-deterministic-names")
 	}

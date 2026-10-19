@@ -19,6 +19,9 @@ func TestForceOwner(t *testing.T) {
 	cliArgs := []string{"-reverse", "-zerokey", "-force_owner=1234:1234"}
 	if plaintextnames {
 		cliArgs = append(cliArgs, "-plaintextnames")
+		if cfsext {
+			cliArgs = append(cliArgs, "-cfsext")
+		}
 	} else if deterministic_names {
 		cliArgs = append(cliArgs, "-deterministic-names")
 	}

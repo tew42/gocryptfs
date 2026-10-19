@@ -19,6 +19,9 @@ var plaintextnames bool
 // deterministic_names is true when the currently running test has -deterministic-names active
 var deterministic_names bool
 
+// cfsext is true when the currently running test has -cfsext active (implies plaintextnames)
+var cfsext bool
+
 // dirA is a normal directory
 var dirA string
 
@@ -38,16 +41,18 @@ func TestMain(m *testing.M) {
 	testcases := []struct {
 		plaintextnames      bool
 		deterministic_names bool
+		cfsext              bool
 	}{
-		{false, false},
-		{true, false},
-		{false, true},
+		{false, false, false},
+		{true, false, false},
+		{false, true, false},
+		{true, false, true},
 	}
 	for i, tc := range testcases {
 		// Fill the global vars
-		plaintextnames, deterministic_names = tc.plaintextnames, tc.deterministic_names
+		plaintextnames, deterministic_names, cfsext = tc.plaintextnames, tc.deterministic_names, tc.cfsext
 		if testing.Verbose() {
-			log.Printf("TestMain: plaintextnames=%v deterministic_names=%v", plaintextnames, deterministic_names)
+			log.Printf("TestMain: plaintextnames=%v deterministic_names=%v cfsext=%v", plaintextnames, deterministic_names, cfsext)
 		}
 
 		dirA, dirB, _ = newReverseFS(nil)
@@ -77,6 +82,9 @@ func newReverseFS(extraMountArgs []string) (backingDir, mntDir, ctlsockPath stri
 	args := []string{"-reverse"}
 	if plaintextnames {
 		args = append(args, "-plaintextnames")
+		if cfsext {
+			args = append(args, "-cfsext")
+		}
 	} else if deterministic_names {
 		args = append(args, "-deterministic-names")
 	}

@@ -23,6 +23,9 @@ func TestOneFileSystem(t *testing.T) {
 	cliArgs := []string{"-reverse", "-zerokey", "-one-file-system"}
 	if plaintextnames {
 		cliArgs = append(cliArgs, "-plaintextnames")
+		if cfsext {
+			cliArgs = append(cliArgs, "-cfsext")
+		}
 	} else if deterministic_names {
 		cliArgs = append(cliArgs, "-deterministic-names")
 	}
