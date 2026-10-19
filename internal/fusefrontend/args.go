@@ -4,10 +4,6 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
-// CfsExtSuffix is appended to the names of non-directory entries when
-// Args.CfsExt is set
-const CfsExtSuffix = ".cfs"
-
 // Args is a container for arguments that are passed from main() to fusefrontend
 type Args struct {
 	// Cipherdir is the backing storage directory (absolute path).

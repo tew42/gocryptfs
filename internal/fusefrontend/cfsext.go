@@ -1,6 +1,7 @@
 package fusefrontend
 
 import (
+	"errors"
 	"strings"
 	"syscall"
 
@@ -12,12 +13,16 @@ import (
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
 )
 
+// CfsExtSuffix is appended to the names of non-directory entries when
+// Args.CfsExt is set
+const CfsExtSuffix = ".cfs"
+
 // childType tells prepareAtSyscall what kind of directory entry `child` is.
 // Only relevant with -cfsext, where non-directories get the ".cfs" suffix.
 type childType uint8
 
 const (
-	childAny childType = iota // unknown; caller resolves (see resolveChildCfsExt)
+	childAny childType = iota // unknown; caller resolves (see cfsExtResolve)
 	childDir
 	childNonDir
 )
@@ -29,21 +34,24 @@ func childTypeOf(isDir bool) childType {
 	return childNonDir
 }
 
-// cNameCfsExt returns the ciphertext name for plaintext `name` of type `ct`.
-func (rn *RootNode) cNameCfsExt(name string, ct childType) string {
+// cfsExtCName returns the ciphertext name for plaintext `name` of type `ct`.
+func (rn *RootNode) cfsExtCName(name string, ct childType) string {
 	if rn.args.CfsExt && ct == childNonDir {
 		return name + CfsExtSuffix
 	}
 	return name
 }
 
-// resolveChildCfsExt finds the cipher entry for plaintext `name` in `dirfd`:
+// cfsExtResolve finds the cipher entry for plaintext `name` in `dirfd`:
 // "name.cfs" if it is not a directory, else "name" if it is a directory
 // and does not end in ".cfs".
-func (rn *RootNode) resolveChildCfsExt(dirfd int, name string) (cName string, st *syscall.Stat_t, errno syscall.Errno) {
+func (rn *RootNode) cfsExtResolve(dirfd int, name string) (cName string, st *syscall.Stat_t, errno syscall.Errno) {
 	st, err := syscallcompat.Fstatat2(dirfd, name+CfsExtSuffix, unix.AT_SYMLINK_NOFOLLOW)
 	if err == nil && uint32(st.Mode)&syscall.S_IFMT != syscall.S_IFDIR {
 		return name + CfsExtSuffix, st, 0
+	}
+	if err != nil && !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ENAMETOOLONG) {
+		return "", nil, fs.ToErrno(err)
 	}
 	if strings.HasSuffix(name, CfsExtSuffix) {
 		// A suffixed name is never a directory
@@ -59,22 +67,10 @@ func (rn *RootNode) resolveChildCfsExt(dirfd int, name string) (cName string, st
 	return name, st, 0
 }
 
-// childTypeCfsExt returns the type of the existing child `name` of `n`.
-func (n *Node) childTypeCfsExt(dirfd int, name string) (childType, syscall.Errno) {
-	if ch := n.GetChild(name); ch != nil {
-		return childTypeOf(ch.IsDir()), 0
-	}
-	_, st, errno := n.rootNode().resolveChildCfsExt(dirfd, name)
-	if errno != 0 {
-		return childAny, errno
-	}
-	return childTypeOf(uint32(st.Mode)&syscall.S_IFMT == syscall.S_IFDIR), 0
-}
-
-// plainNameCfsExt returns the plaintext name of cipher entry `cName` with
+// cfsExtPlainName returns the plaintext name of cipher entry `cName` with
 // file type `mode`, or false if the entry must be hidden.
 // Directories ending in ".cfs" are hidden.
-func plainNameCfsExt(cName string, mode uint32) (string, bool) {
+func cfsExtPlainName(cName string, mode uint32) (string, bool) {
 	if mode&syscall.S_IFMT == syscall.S_IFDIR {
 		if strings.HasSuffix(cName, CfsExtSuffix) {
 			return "", false

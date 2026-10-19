@@ -130,7 +130,8 @@ func (rn *RootNode) reportMitigatedCorruption(item string) {
 //
 // Prevents name clashes with internal files when file names are not encrypted
 func (rn *RootNode) isFiltered(child string) bool {
-	if !rn.args.PlaintextNames {
+	// With -cfsext, a file "gocryptfs.conf" is stored as "gocryptfs.conf.cfs"
+	if !rn.args.PlaintextNames || rn.args.CfsExt {
 		return false
 	}
 	// gocryptfs.conf in the root directory is forbidden

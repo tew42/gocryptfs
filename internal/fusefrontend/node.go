@@ -33,7 +33,7 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (ch 
 	// Get device number and inode number into `st`
 	var st *syscall.Stat_t
 	if rn.args.CfsExt {
-		cName, st, errno = rn.resolveChildCfsExt(dirfd, name)
+		cName, st, errno = rn.cfsExtResolve(dirfd, name)
 		if errno != 0 {
 			return nil, errno
 		}
@@ -480,29 +480,30 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	rn := n.rootNode()
 	if rn.args.PlaintextNames {
 		if rn.args.CfsExt {
-			ct, errno := n.childTypeCfsExt(dirfd, name)
+			var st *syscall.Stat_t
+			cName, st, errno = rn.cfsExtResolve(dirfd, name)
 			if errno != 0 {
 				return errno
 			}
-			if ct == childDir && strings.HasSuffix(newName, CfsExtSuffix) {
-				return syscall.EINVAL
-			}
-			// The whiteout left for a directory would be an unsuffixed char device
-			if flags&syscallcompat.RENAME_WHITEOUT != 0 && ct == childDir {
-				return syscall.EINVAL
+			isDir := uint32(st.Mode)&syscall.S_IFMT == syscall.S_IFDIR
+			cName2 = newName + CfsExtSuffix
+			if isDir {
+				// No .cfs directory names; a directory whiteout would be an unsuffixed char device
+				if strings.HasSuffix(newName, CfsExtSuffix) || flags&syscallcompat.RENAME_WHITEOUT != 0 {
+					return syscall.EINVAL
+				}
+				cName2 = newName
 			}
 			if flags&syscallcompat.RENAME_EXCHANGE != 0 {
-				ct2, errno := n2.childTypeCfsExt(dirfd2, newName)
+				// Both sides must have the same type, otherwise the cipher names cannot be swapped atomically
+				c2, _, errno := rn.cfsExtResolve(dirfd2, newName)
 				if errno != 0 {
 					return errno
 				}
-				// Cannot swap atomically when the cipher names differ
-				if ct2 != ct {
+				if c2 != cName2 {
 					return syscall.EINVAL
 				}
 			}
-			cName = rn.cNameCfsExt(name, ct)
-			cName2 = rn.cNameCfsExt(newName, ct)
 		}
 		return fs.ToErrno(syscallcompat.Renameat2(dirfd, cName, dirfd2, cName2, uint(flags)))
 	}

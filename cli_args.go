@@ -166,7 +166,7 @@ func parseCliOpts(osArgs []string) (args argContainer) {
 	flagSet.BoolVar(&args.fg, "fg", false, "Stay in the foreground")
 	flagSet.BoolVar(&args.version, "version", false, "Print version and exit")
 	flagSet.BoolVar(&args.plaintextnames, "plaintextnames", false, "Do not encrypt file names")
-	flagSet.BoolVar(&args.cfsext, "cfsext", false, "Store files (not directories) as NAME.cfs in CIPHERDIR (with -init -plaintextnames)")
+	flagSet.BoolVar(&args.cfsext, "cfsext", false, "Store files (not directories) as NAME.cfs in CIPHERDIR (requires -plaintextnames)")
 	flagSet.BoolVar(&args.quiet, "q", false, "")
 	flagSet.BoolVar(&args.quiet, "quiet", false, "Quiet - silence informational messages")
 	flagSet.BoolVar(&args.nosyslog, "nosyslog", false, "Do not redirect output to syslog when running in the background")

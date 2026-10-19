@@ -217,15 +217,15 @@ func TestPrepareAtSyscallCfsExt(t *testing.T) {
 		t.Fatal(errno)
 	}
 	defer syscall.Close(dirfd)
-	cName, st, errno := rn.resolveChildCfsExt(dirfd, "f")
+	cName, st, errno := rn.cfsExtResolve(dirfd, "f")
 	if errno != 0 || cName != "f.cfs" || st.Mode&syscall.S_IFMT == syscall.S_IFDIR {
 		t.Errorf("f: cName=%q errno=%v", cName, errno)
 	}
-	cName, st, errno = rn.resolveChildCfsExt(dirfd, "dir1")
+	cName, st, errno = rn.cfsExtResolve(dirfd, "dir1")
 	if errno != 0 || cName != "dir1" || st.Mode&syscall.S_IFMT != syscall.S_IFDIR {
 		t.Errorf("dir1: cName=%q errno=%v", cName, errno)
 	}
-	_, _, errno = rn.resolveChildCfsExt(dirfd, "nope")
+	_, _, errno = rn.cfsExtResolve(dirfd, "nope")
 	if errno != syscall.ENOENT {
 		t.Errorf("nope: want ENOENT, got %v", errno)
 	}
@@ -233,7 +233,7 @@ func TestPrepareAtSyscallCfsExt(t *testing.T) {
 	if err := os.Mkdir(cipherdir+"/d.cfs", 0700); err != nil {
 		t.Fatal(err)
 	}
-	_, _, errno = rn.resolveChildCfsExt(dirfd, "d.cfs")
+	_, _, errno = rn.cfsExtResolve(dirfd, "d.cfs")
 	if errno != syscall.ENOENT {
 		t.Errorf("d.cfs: want ENOENT, got %v", errno)
 	}

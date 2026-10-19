@@ -135,8 +135,10 @@ func (f *File) Readdirent(ctx context.Context) (entry *fuse.DirEntry, errno sysc
 			// We want these as-is
 			return
 		}
-		if f.dirHandle.isRootDir && cName == configfile.ConfDefaultName {
+		if f.dirHandle.isRootDir && cName == configfile.ConfDefaultName &&
+			!(f.rootNode.args.CfsExt && entry.Mode&syscall.S_IFMT == syscall.S_IFDIR) {
 			// silently ignore "gocryptfs.conf" in the top level dir
+			// (with -cfsext, a directory of that name is a plaintext entry)
 			continue
 		}
 		if f.rootNode.args.PlaintextNames {
@@ -157,7 +159,7 @@ func (f *File) Readdirent(ctx context.Context) (entry *fuse.DirEntry, errno sysc
 				f.rootNode.reportMitigatedCorruption(cName)
 				continue
 			}
-			name, ok := plainNameCfsExt(cName, entry.Mode)
+			name, ok := cfsExtPlainName(cName, entry.Mode)
 			if !ok {
 				tlog.Warn.Printf("Readdirent: hiding %q: %s suffix does not match its file type", cName, CfsExtSuffix)
 				f.rootNode.reportMitigatedCorruption(cName)

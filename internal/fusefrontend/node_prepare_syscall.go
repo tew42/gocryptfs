@@ -47,7 +47,7 @@ func (n *Node) prepareAtSyscall(child string, ct childType) (dirfd int, cName st
 	dirfd, iv = rn.dirCache.Lookup(n)
 	if dirfd > 0 {
 		if rn.args.PlaintextNames {
-			return dirfd, rn.cNameCfsExt(child, ct), 0
+			return dirfd, rn.cfsExtCName(child, ct), 0
 		}
 		var err error
 		cName, err = encryptName(dirfd, child, iv)
@@ -83,7 +83,7 @@ func (n *Node) prepareAtSyscall(child string, ct childType) (dirfd int, cName st
 	rn.dirCache.Store(n, dirfd, iv)
 
 	if rn.args.PlaintextNames {
-		return dirfd, rn.cNameCfsExt(child, ct), 0
+		return dirfd, rn.cfsExtCName(child, ct), 0
 	}
 
 	cName, err = encryptName(dirfd, child, iv)

@@ -5,6 +5,7 @@ package cfsext
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -168,6 +169,35 @@ func TestReaddir(t *testing.T) {
 		if e.Name() == configfile.ConfDefaultName {
 			t.Errorf("%q should be hidden", e.Name())
 		}
+	}
+}
+
+// gocryptfs.conf is not reserved in the root dir: the plaintext file is
+// stored as gocryptfs.conf.cfs and cannot clash with the config file
+func TestRootConfName(t *testing.T) {
+	fn := pDir + "/" + configfile.ConfDefaultName
+	content := []byte("not the config")
+	if err := os.WriteFile(fn, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !mustExist(t, cDir+"/"+configfile.ConfDefaultName+".cfs").Mode().IsRegular() {
+		t.Errorf("%s.cfs is not a regular file", configfile.ConfDefaultName)
+	}
+	if !test_helpers.VerifyExistence(t, fn) {
+		t.Errorf("%q not visible", fn)
+	}
+	got, err := os.ReadFile(fn)
+	if err != nil || !bytes.Equal(got, content) {
+		t.Errorf("ReadFile: %q, %v", got, err)
+	}
+	if err := os.Remove(fn); err != nil {
+		t.Fatal(err)
+	}
+	mustNotExist(t, cDir+"/"+configfile.ConfDefaultName+".cfs")
+	mustNotExist(t, fn)
+	// The config file is untouched
+	if _, _, err := configfile.LoadAndDecrypt(cDir+"/"+configfile.ConfDefaultName, testPw); err != nil {
+		t.Error(err)
 	}
 }
 
@@ -449,8 +479,8 @@ func TestConfWins(t *testing.T) {
 }
 
 // Non-directory cipher entries without suffix and directories ending in .cfs
-// are hidden (with a warning, hence -wpanic=0). When both "a" (dir) and
-// "a.cfs" (file) exist, the file wins and the directory is hidden.
+// are hidden (with a warning, hence -wpanic=0). When both "shadowdir" (dir)
+// and "shadowdir.cfs" (file) exist, the file wins and the directory is hidden.
 // -fsck reports all of them.
 func TestHiddenEntries(t *testing.T) {
 	c3 := test_helpers.InitFS(t, "-plaintextnames", "-cfsext")
@@ -466,29 +496,29 @@ func TestHiddenEntries(t *testing.T) {
 	if err := os.WriteFile(c3+"/plain.txt", []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	// Get a valid encrypted file without the kernel ever looking up "a"
-	content := []byte("file a")
-	if err := os.WriteFile(p3+"/a_src", content, 0600); err != nil {
+	// Get a valid encrypted file without the kernel ever looking up "shadowdir"
+	content := []byte("file shadowdir")
+	if err := os.WriteFile(p3+"/shadow_src", content, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(c3+"/a_src.cfs", c3+"/a.cfs"); err != nil {
+	if err := os.Rename(c3+"/shadow_src.cfs", c3+"/shadowdir.cfs"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(c3+"/a", 0700); err != nil {
+	if err := os.Mkdir(c3+"/shadowdir", 0700); err != nil {
 		t.Fatal(err)
 	}
 	// A directory ending in .cfs can only be created out of band
 	if err := os.Mkdir(c3+"/h.cfs", 0700); err != nil {
 		t.Fatal(err)
 	}
-	fi, err := os.Lstat(p3 + "/a")
+	fi, err := os.Lstat(p3 + "/shadowdir")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !fi.Mode().IsRegular() {
-		t.Errorf("a: want regular file, got %v", fi.Mode())
+		t.Errorf("shadowdir: want regular file, got %v", fi.Mode())
 	}
-	got, err := os.ReadFile(p3 + "/a")
+	got, err := os.ReadFile(p3 + "/shadowdir")
 	if err != nil || !bytes.Equal(got, content) {
 		t.Errorf("ReadFile: %q, %v", got, err)
 	}
@@ -502,20 +532,20 @@ func TestHiddenEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nA := 0
+	nShadow := 0
 	for _, e := range entries {
 		switch e.Name() {
 		case "plain.txt", "h.cfs":
 			t.Errorf("%q should be hidden", e.Name())
-		case "a":
-			nA++
+		case "shadowdir":
+			nShadow++
 		}
 	}
-	if nA != 1 {
-		t.Errorf("a should be listed exactly once, found %d times: %v", nA, entries)
+	if nShadow != 1 {
+		t.Errorf("shadowdir should be listed exactly once, found %d times: %v", nShadow, entries)
 	}
-	if fi, err := os.Lstat(p3 + "/a"); err != nil || !fi.Mode().IsRegular() {
-		t.Errorf("a after readdir: want regular file, got fi=%v err=%v", fi, err)
+	if fi, err := os.Lstat(p3 + "/shadowdir"); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("shadowdir after readdir: want regular file, got fi=%v err=%v", fi, err)
 	}
 
 	// fsck mounts the filesystem itself
@@ -526,9 +556,11 @@ func TestHiddenEntries(t *testing.T) {
 	if code := test_helpers.ExtractCmdExitCode(err); code != exitcodes.FsckErrors {
 		t.Errorf("fsck: want exit code %d, got %d", exitcodes.FsckErrors, code)
 	}
-	for _, want := range []string{"plain.txt", "shadowed", "h.cfs"} {
+	// fsck's own report line for each hidden cipher entry in the root dir
+	for _, cName := range []string{"plain.txt", "shadowdir", "h.cfs"} {
+		want := fmt.Sprintf("fsck: corrupt entry in dir %q: %q", "", cName)
 		if !strings.Contains(string(out), want) {
-			t.Errorf("fsck output does not mention %q", want)
+			t.Errorf("fsck output does not contain %q", want)
 		}
 	}
 	if t.Failed() {

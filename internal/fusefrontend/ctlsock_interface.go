@@ -6,8 +6,6 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/rfjakob/gocryptfs/v2/internal/ctlsocksrv"
 	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
@@ -30,7 +28,7 @@ func (rn *RootNode) EncryptPath(plainPath string) (cipherPath string, err error)
 		}
 		defer syscall.Close(dirfd)
 		base := filepath.Base(plainPath)
-		cName, _, errno := rn.resolveChildCfsExt(dirfd, base)
+		cName, _, errno := rn.cfsExtResolve(dirfd, base)
 		if errno == syscall.ENOENT {
 			// Missing leaf: assume a file
 			cName = base + CfsExtSuffix
@@ -86,22 +84,7 @@ func (rn *RootNode) DecryptPath(cipherPath string) (plainPath string, err error)
 		return cipherPath, nil
 	}
 	if rn.args.CfsExt {
-		dirfd, err := syscallcompat.OpenDirNofollow(rn.args.Cipherdir, filepath.Dir(cipherPath))
-		if err != nil {
-			return "", err
-		}
-		defer syscall.Close(dirfd)
-		base := filepath.Base(cipherPath)
-		mode := uint32(syscall.S_IFREG)
-		st, err := syscallcompat.Fstatat2(dirfd, base, unix.AT_SYMLINK_NOFOLLOW)
-		if err == nil {
-			mode = uint32(st.Mode) & syscall.S_IFMT
-		}
-		name, ok := plainNameCfsExt(base, mode)
-		if !ok {
-			return "", syscall.ENOENT
-		}
-		return filepath.Join(filepath.Dir(cipherPath), name), nil
+		return strings.TrimSuffix(cipherPath, CfsExtSuffix), nil
 	}
 
 	dirfd, _, errno := rn.prepareAtSyscallMyself()

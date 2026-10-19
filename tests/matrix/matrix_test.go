@@ -302,22 +302,24 @@ func TestRmwRace(t *testing.T) {
 	}
 }
 
-// With "--plaintextnames", the name "/gocryptfs.conf" is reserved.
+// With "--plaintextnames", the name "/gocryptfs.conf" is reserved (but not with
+// "-cfsext", which stores it as "gocryptfs.conf.cfs").
 // Otherwise there should be no restrictions.
 func TestFiltered(t *testing.T) {
+	reserved := testcase.plaintextnames && !testcase.isSet("-cfsext")
 	filteredFile := test_helpers.DefaultPlainDir + "/gocryptfs.conf"
 	file, err := os.Create(filteredFile)
-	if testcase.plaintextnames && err == nil {
+	if reserved && err == nil {
 		t.Errorf("should have failed but didn't")
-	} else if !testcase.plaintextnames && err != nil {
+	} else if !reserved && err != nil {
 		t.Error(err)
 	}
 	file.Close()
 
 	err = os.Remove(filteredFile)
-	if testcase.plaintextnames && err == nil {
+	if reserved && err == nil {
 		t.Errorf("should have failed but didn't")
-	} else if !testcase.plaintextnames && err != nil {
+	} else if !reserved && err != nil {
 		t.Error(err)
 	}
 }
