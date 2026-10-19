@@ -105,6 +105,19 @@ secure with deterministic nonces as used in "-reverse" mode.
 
 Run `gocryptfs -speed` to find out if and how much slower.
 
+#### -cfsext
+Store every non-directory entry (regular file, symlink, FIFO, socket,
+device node) as `NAME.cfs` in CIPHERDIR; directories keep their names and
+symlink targets are unchanged. Example: `docs/report.txt` is stored as
+`docs/report.txt.cfs`. Requires `-plaintextnames`.
+
+Plaintext names are limited to 251 bytes. Non-directory entries without
+the `.cfs` suffix are not shown in the mount (`-fsck` reports them).
+`RENAME_EXCHANGE` between a directory and a non-directory fails with EINVAL.
+
+The resulting `gocryptfs.conf` has "CfsExt" in "FeatureFlags"; older
+gocryptfs versions cannot mount it.
+
 #### -deterministic-names
 Disable file name randomisation and creation of `gocryptfs.diriv` files.
 This can prevent sync conflicts when synchronising files, but
@@ -146,7 +159,7 @@ Example:
     -longnamemax 100
 
 #### -plaintextnames
-Do not encrypt file names and symlink targets.
+Do not encrypt file names and symlink targets. See also `-cfsext`.
 
 #### -raw64
 Use unpadded base64 encoding for file names. This gets rid of the
@@ -567,7 +580,8 @@ if you have forgotten the password or lost the config file.
 Even if a config file exists, it will not be used. All non-standard
 settings have to be passed on the command line: `-aessiv` when you
 mount a filesystem that was created using reverse mode, or
-`-plaintextnames` for a filesystem that was created with that option.
+`-plaintextnames` (and `-cfsext`, if used) for a filesystem that was
+created with that option.
 
 Example 1: Mount a filesystem that was created using default options:
 

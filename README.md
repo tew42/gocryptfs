@@ -204,6 +204,11 @@ RM:    2,367
 Changelog
 ---------
 
+#### unreleased
+* New `-cfsext` option for `-init -plaintextnames`: store files (not directories)
+  as `NAME.cfs` in CIPHERDIR. New feature flag `CfsExt`: older gocryptfs versions
+  cannot mount such filesystems.
+
 #### v2.6.1, 2025-08-10
 * Fix warnings `cipherSize X: incomplete last block (Y bytes), padding to Z bytes`
   (harmless but annoying, [#951](https://github.com/rfjakob/gocryptfs/issues/951))
