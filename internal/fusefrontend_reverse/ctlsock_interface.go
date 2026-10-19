@@ -57,13 +57,8 @@ func (rn *RootNode) EncryptPath(plainPath string) (string, error) {
 
 // DecryptPath implements ctlsock.Backend
 func (rn *RootNode) DecryptPath(cipherPath string) (string, error) {
-	if rn.args.CfsExt && cipherPath != "" {
-		dirfd, pPath, err := rn.openBackingDir(cipherPath, childAny)
-		if err != nil {
-			return "", err
-		}
-		syscall.Close(dirfd)
-		return pPath, nil
+	if rn.args.CfsExt {
+		return strings.TrimSuffix(cipherPath, fusefrontend.CfsExtSuffix), nil
 	}
 	p, err := rn.decryptPath(cipherPath)
 	return p, err

@@ -49,14 +49,28 @@ func TestCfsExtView(t *testing.T) {
 	if err := os.Symlink("f", pWd+"/l"); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(pWd+"/x.cfs", content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// A plaintext file "gocryptfs.conf" next to the virtual config file
+	conf := []byte("not the config")
+	if err := os.WriteFile(dirA+"/gocryptfs.conf", conf, 0600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(dirA + "/gocryptfs.conf")
 
 	// Encrypted view
 	cWd := dirB + "/" + wd
-	if names := readdirNames(t, cWd); !slices.Equal(names, []string{"d", "f.cfs", "l.cfs"}) {
+	if names := readdirNames(t, cWd); !slices.Equal(names, []string{"d", "f.cfs", "l.cfs", "x.cfs.cfs"}) {
 		t.Errorf("wrong listing of %q: %q", cWd, names)
 	}
-	if fi, err := os.Lstat(cWd + "/f.cfs"); err != nil || !fi.Mode().IsRegular() {
-		t.Errorf("f.cfs should be a regular file: fi=%v err=%v", fi, err)
+	for _, p := range []string{cWd + "/f.cfs", cWd + "/x.cfs.cfs", dirB + "/gocryptfs.conf.cfs"} {
+		if fi, err := os.Lstat(p); err != nil || !fi.Mode().IsRegular() {
+			t.Errorf("%q should be a regular file: fi=%v err=%v", p, fi, err)
+		}
+	}
+	if data, err := os.ReadFile(dirB + "/gocryptfs.conf"); err != nil || !bytes.Contains(data, []byte("FeatureFlags")) {
+		t.Errorf("gocryptfs.conf should be the config file: err=%v", err)
 	}
 	if _, err := os.Lstat(cWd + "/f"); !errors.Is(err, syscall.ENOENT) {
 		t.Errorf("f: want ENOENT, got %v", err)
@@ -67,6 +81,13 @@ func TestCfsExtView(t *testing.T) {
 	if !test_helpers.VerifyExistence(t, cWd+"/d/g.cfs") {
 		t.Errorf("d/g.cfs missing")
 	}
+	// ".cfs" maps to no plaintext name: it must not resolve to "d/d"
+	if err := os.WriteFile(pWd+"/d/d", nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(cWd + "/d/.cfs"); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("d/.cfs: want ENOENT, got %v", err)
+	}
 	if fi, err := os.Lstat(cWd + "/l.cfs"); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("l.cfs should be a symlink: fi=%v err=%v", fi, err)
 	}
@@ -76,11 +97,17 @@ func TestCfsExtView(t *testing.T) {
 
 	// Round trip through the forward mount
 	pWdC := dirC + "/" + wd
-	if names := readdirNames(t, pWdC); !slices.Equal(names, []string{"d", "f", "l"}) {
+	if names := readdirNames(t, pWdC); !slices.Equal(names, []string{"d", "f", "l", "x.cfs"}) {
 		t.Errorf("wrong listing of %q: %q", pWdC, names)
 	}
-	if data, err := os.ReadFile(pWdC + "/f"); err != nil || !bytes.Equal(data, content) {
-		t.Errorf("f: want content %q, got %q, err=%v", content, data, err)
+	for p, want := range map[string][]byte{
+		pWdC + "/f":              content,
+		pWdC + "/x.cfs":          content,
+		dirC + "/gocryptfs.conf": conf,
+	} {
+		if data, err := os.ReadFile(p); err != nil || !bytes.Equal(data, want) {
+			t.Errorf("%q: want content %q, got %q, err=%v", p, want, data, err)
+		}
 	}
 	if !test_helpers.VerifyExistence(t, pWdC+"/d/g") {
 		t.Errorf("d/g missing")

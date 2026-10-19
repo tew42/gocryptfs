@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -13,6 +14,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/rfjakob/gocryptfs/v2/internal/contentenc"
+	"github.com/rfjakob/gocryptfs/v2/internal/fusefrontend"
 	"github.com/rfjakob/gocryptfs/v2/internal/pathiv"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
 	"github.com/rfjakob/gocryptfs/v2/internal/tlog"
@@ -50,6 +52,14 @@ func (n *Node) Lookup(ctx context.Context, cName string, out *fuse.EntryOut) (ch
 		return n.lookupConf(ctx, out)
 	} else if t == typeReal {
 		// real file
+		// -cfsext: Readdir skips names that get too long with the suffix
+		if rn.args.CfsExt && len(cName) > unix.NAME_MAX {
+			return nil, syscall.ENAMETOOLONG
+		}
+		// -cfsext: ".cfs" alone would strip to an empty plaintext name
+		if rn.args.CfsExt && cName == fusefrontend.CfsExtSuffix {
+			return nil, syscall.ENOENT
+		}
 		d, errno = n.prepareAtSyscall(cName)
 		//fmt.Printf("Lookup: prepareAtSyscall -> d=%#v, errno=%d\n", d, errno)
 		if errno != 0 {
@@ -61,6 +71,10 @@ func (n *Node) Lookup(ctx context.Context, cName string, out *fuse.EntryOut) (ch
 	st, err := syscallcompat.Fstatat2(d.dirfd, d.pName, unix.AT_SYMLINK_NOFOLLOW)
 	if err != nil {
 		return nil, fs.ToErrno(err)
+	}
+	// -cfsext: a virtual name ends in .cfs iff it is not a directory
+	if t == typeReal && rn.args.CfsExt && (st.Mode&syscall.S_IFMT == syscall.S_IFDIR) == strings.HasSuffix(cName, fusefrontend.CfsExtSuffix) {
+		return nil, syscall.ENOENT
 	}
 	// Create new inode and fill `out`
 	ch = n.newChild(ctx, st, out)

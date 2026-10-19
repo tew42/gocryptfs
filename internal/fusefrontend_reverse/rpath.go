@@ -7,8 +7,6 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/rfjakob/gocryptfs/v2/internal/fusefrontend"
 	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
 	"github.com/rfjakob/gocryptfs/v2/internal/pathiv"
@@ -102,11 +100,8 @@ func (rn *RootNode) deriveDirIV(cPath string) []byte {
 // "pRelPath", opens the directory that contains the target file/dir
 // and returns the fd to the directory and the decrypted name of the
 // target file. The fd/name pair is intended for use with fchownat and
-// friends.
-//
-// With -cfsext, "ct" says how the last component of cPath maps to its
-// plaintext name (see cfsExtName). It is ignored otherwise.
-func (rn *RootNode) openBackingDir(cPath string, ct childType) (dirfd int, pPath string, err error) {
+// friends. With -cfsext, the ".cfs" suffix of non-directories is stripped.
+func (rn *RootNode) openBackingDir(cPath string) (dirfd int, pPath string, err error) {
 	defer func() {
 		tlog.Debug.Printf("openBackingDir %q -> %d %q %v\n", cPath, dirfd, pPath, err)
 	}()
@@ -115,26 +110,8 @@ func (rn *RootNode) openBackingDir(cPath string, ct childType) (dirfd int, pPath
 	if err != nil {
 		return
 	}
-	if rn.args.CfsExt && cPath != "" {
-		// -cfsext: resolve the last component inside its directory.
-		// Open directory, safe against symlink races
-		pDir := filepath.Dir(pPath)
-		dirfd, err = syscallcompat.OpenDirNofollow(rn.args.Cipherdir, pDir)
-		if err != nil {
-			return
-		}
-		var pName string
-		pName, err = cfsExtName(dirfd, filepath.Base(cPath), ct)
-		if err != nil {
-			syscall.Close(dirfd)
-			return -1, "", err
-		}
-		pPath = filepath.Join(pDir, pName)
-		if rn.isExcludedPlain(pPath) {
-			syscall.Close(dirfd)
-			return -1, "", syscall.EPERM
-		}
-		return dirfd, pPath, nil
+	if rn.args.CfsExt {
+		pPath = strings.TrimSuffix(pPath, fusefrontend.CfsExtSuffix)
 	}
 	if rn.isExcludedPlain(pPath) {
 		err = syscall.EPERM
@@ -147,43 +124,4 @@ func (rn *RootNode) openBackingDir(cPath string, ct childType) (dirfd int, pPath
 		return
 	}
 	return dirfd, pPath, nil
-}
-
-// cfsExtName maps the virtual name "cName" of an entry in "dirfd" to its
-// plaintext name (-cfsext). Non-directories are shown as name+CfsExtSuffix,
-// directories unchanged. A virtual name ends in CfsExtSuffix if and only if
-// it is not a directory, so directories named *.cfs never resolve.
-// childAny probes the backing directory.
-func cfsExtName(dirfd int, cName string, ct childType) (string, error) {
-	// Readdir skips names that get too long with the suffix, so lookups
-	// must not resolve them either.
-	if len(cName) > unix.NAME_MAX {
-		return "", syscall.ENAMETOOLONG
-	}
-	stripped, ok := strings.CutSuffix(cName, fusefrontend.CfsExtSuffix)
-	switch ct {
-	case childDir:
-		if ok {
-			return "", syscall.ENOENT
-		}
-		return cName, nil
-	case childNonDir:
-		if !ok {
-			return "", syscall.ENOENT
-		}
-		return stripped, nil
-	}
-	// childAny: the suffix decides whether the entry must be a directory
-	pName, wantDir := stripped, false
-	if !ok {
-		pName, wantDir = cName, true
-	}
-	st, err := syscallcompat.Fstatat2(dirfd, pName, unix.AT_SYMLINK_NOFOLLOW)
-	if err != nil {
-		return "", err
-	}
-	if (st.Mode&syscall.S_IFMT == syscall.S_IFDIR) != wantDir {
-		return "", syscall.ENOENT
-	}
-	return pName, nil
 }

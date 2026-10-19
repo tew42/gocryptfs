@@ -111,8 +111,11 @@ device node) as `NAME.cfs` in CIPHERDIR; directories keep their names and
 symlink targets are unchanged. Example: `docs/report.txt` is stored as
 `docs/report.txt.cfs`. Requires `-plaintextnames`.
 
-Plaintext names are limited to 251 bytes. Non-directory entries without
-the `.cfs` suffix are not shown in the mount (`-fsck` reports them).
+Names of non-directories are limited to 251 bytes. With `-reverse`, entries
+that cannot be represented (non-directory names longer than 251 bytes, and
+directories whose name ends in `.cfs`, including their contents) are omitted
+from the encrypted view with a warning. Non-directory entries without the
+`.cfs` suffix are not shown in the mount (`-fsck` reports them).
 `RENAME_EXCHANGE` between a directory and a non-directory fails with EINVAL.
 Directory names must not end in `.cfs`; mkdir and rename return EINVAL for
 such names. If the cipher directory is written by more than one mount at the
