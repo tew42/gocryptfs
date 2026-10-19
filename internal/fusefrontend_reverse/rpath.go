@@ -151,7 +151,9 @@ func (rn *RootNode) openBackingDir(cPath string, ct childType) (dirfd int, pPath
 
 // cfsExtName maps the virtual name "cName" of an entry in "dirfd" to its
 // plaintext name (-cfsext). Non-directories are shown as name+CfsExtSuffix,
-// directories unchanged. childAny probes the backing directory.
+// directories unchanged. A virtual name ends in CfsExtSuffix if and only if
+// it is not a directory, so directories named *.cfs never resolve.
+// childAny probes the backing directory.
 func cfsExtName(dirfd int, cName string, ct childType) (string, error) {
 	// Readdir skips names that get too long with the suffix, so lookups
 	// must not resolve them either.
@@ -161,6 +163,9 @@ func cfsExtName(dirfd int, cName string, ct childType) (string, error) {
 	stripped, ok := strings.CutSuffix(cName, fusefrontend.CfsExtSuffix)
 	switch ct {
 	case childDir:
+		if ok {
+			return "", syscall.ENOENT
+		}
 		return cName, nil
 	case childNonDir:
 		if !ok {
@@ -168,19 +173,17 @@ func cfsExtName(dirfd int, cName string, ct childType) (string, error) {
 		}
 		return stripped, nil
 	}
-	// childAny: a suffixed name of a non-directory wins over a directory
-	if ok {
-		st, err := syscallcompat.Fstatat2(dirfd, stripped, unix.AT_SYMLINK_NOFOLLOW)
-		if err == nil && st.Mode&syscall.S_IFMT != syscall.S_IFDIR {
-			return stripped, nil
-		}
+	// childAny: the suffix decides whether the entry must be a directory
+	pName, wantDir := stripped, false
+	if !ok {
+		pName, wantDir = cName, true
 	}
-	st, err := syscallcompat.Fstatat2(dirfd, cName, unix.AT_SYMLINK_NOFOLLOW)
+	st, err := syscallcompat.Fstatat2(dirfd, pName, unix.AT_SYMLINK_NOFOLLOW)
 	if err != nil {
 		return "", err
 	}
-	if st.Mode&syscall.S_IFMT != syscall.S_IFDIR {
+	if (st.Mode&syscall.S_IFMT == syscall.S_IFDIR) != wantDir {
 		return "", syscall.ENOENT
 	}
-	return cName, nil
+	return pName, nil
 }
