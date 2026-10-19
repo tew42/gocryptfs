@@ -52,6 +52,7 @@ func TestMain(m *testing.M) {
 		// Plaintextnames
 		{true, "true", false, false, nil},
 		{true, "false", false, false, nil},
+		{true, "auto", false, false, []string{"-cfsext"}},
 		// AES-SIV (does not use openssl, no need to test permutations)
 		{false, "auto", true, false, nil},
 		{true, "auto", true, false, nil},

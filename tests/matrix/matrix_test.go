@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -327,6 +328,15 @@ func TestFilenameEncryption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if testcase.isSet("-cfsext") {
+		if _, err = os.Stat(test_helpers.DefaultCipherDir + "/TestFilenameEncryption.txt.cfs"); err != nil {
+			t.Errorf("cfsext not working: %v", err)
+		}
+		if _, err = os.Stat(test_helpers.DefaultCipherDir + "/TestFilenameEncryption.txt"); err == nil {
+			t.Errorf("cfsext: unsuffixed cipher name should not exist")
+		}
+		return
+	}
 	_, err = os.Stat(test_helpers.DefaultCipherDir + "/TestFilenameEncryption.txt")
 	if testcase.plaintextnames && err != nil {
 		t.Errorf("plaintextnames not working: %v", err)
@@ -338,6 +348,15 @@ func TestFilenameEncryption(t *testing.T) {
 // Test Rename
 func TestRename(t *testing.T) {
 	test_helpers.TestRename(t, test_helpers.DefaultPlainDir)
+}
+
+// maxNameLen is the maximum plaintext file name length. With -cfsext, the
+// ".cfs" suffix takes 4 of the 255 bytes the backing filesystem allows.
+func maxNameLen() int {
+	if testcase.isSet("-cfsext") {
+		return 251
+	}
+	return 255
 }
 
 // Test that names of all lengths work
@@ -355,9 +374,11 @@ func TestNameLengths(t *testing.T) {
 
 	wd := test_helpers.DefaultPlainDir + "/"
 	name := "x"
+	var createErr error
 	for len(name) < 2000 {
 		f, err := os.Create(wd + name + "x")
 		if err != nil {
+			createErr = err
 			break
 		}
 		name = name + "x"
@@ -386,8 +407,11 @@ func TestNameLengths(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(name) != 255 {
+	if len(name) != maxNameLen() {
 		t.Errorf("maxlen=%d", len(name))
+	}
+	if testcase.isSet("-cfsext") && !errors.Is(createErr, syscall.ENAMETOOLONG) {
+		t.Errorf("want ENAMETOOLONG above maxlen, got %v", createErr)
 	}
 }
 
@@ -398,8 +422,8 @@ func TestLongNames(t *testing.T) {
 	}
 	cnt1 := len(fi)
 	wd := test_helpers.DefaultPlainDir + "/"
-	// Create file with long name
-	n255x := string(bytes.Repeat([]byte("x"), 255))
+	// Create file with long name (n255x/y/s have maxNameLen() bytes)
+	n255x := string(bytes.Repeat([]byte("x"), maxNameLen()))
 	f, err := os.Create(wd + n255x)
 	if err != nil {
 		t.Fatalf("Could not create n255x: %v", err)
@@ -409,7 +433,7 @@ func TestLongNames(t *testing.T) {
 		t.Errorf("n255x is not in directory listing")
 	}
 	// Rename long to long (target does not exist)
-	n255y := string(bytes.Repeat([]byte("y"), 255))
+	n255y := string(bytes.Repeat([]byte("y"), maxNameLen()))
 	err = os.Rename(wd+n255x, wd+n255y)
 	if err != nil {
 		t.Fatalf("Could not rename n255x to n255y: %v", err)
@@ -481,7 +505,7 @@ func TestLongNames(t *testing.T) {
 		t.Errorf("n255x still there after unlink")
 	}
 	// Long symlink
-	n255s := string(bytes.Repeat([]byte("s"), 255))
+	n255s := string(bytes.Repeat([]byte("s"), maxNameLen()))
 	err = os.Symlink("/", wd+n255s)
 	if err != nil {
 		t.Fatal(err)
@@ -524,7 +548,7 @@ func TestLongLink(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	f.Close()
-	l255 := string(bytes.Repeat([]byte("l"), 255))
+	l255 := string(bytes.Repeat([]byte("l"), maxNameLen()))
 	err = os.Link(target, wd+l255)
 	if err != nil {
 		t.Error(err)
