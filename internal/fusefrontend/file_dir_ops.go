@@ -135,6 +135,15 @@ func (f *File) Readdirent(ctx context.Context) (entry *fuse.DirEntry, errno sysc
 			// We want these as-is
 			return
 		}
+		if f.rootNode.args.CfsExt && entry.Mode&syscall.S_IFMT == 0 {
+			// DT_UNKNOWN from the dirstream; the gocryptfs.conf check below needs the type
+			st, err := syscallcompat.Fstatat2(f.intFd(), cName, unix.AT_SYMLINK_NOFOLLOW)
+			if err != nil {
+				// entry vanished
+				continue
+			}
+			entry.Mode = uint32(st.Mode) & syscall.S_IFMT
+		}
 		if f.dirHandle.isRootDir && cName == configfile.ConfDefaultName &&
 			!(f.rootNode.args.CfsExt && entry.Mode&syscall.S_IFMT == syscall.S_IFDIR) {
 			// silently ignore "gocryptfs.conf" in the top level dir
@@ -144,15 +153,6 @@ func (f *File) Readdirent(ctx context.Context) (entry *fuse.DirEntry, errno sysc
 		if f.rootNode.args.PlaintextNames {
 			if !f.rootNode.args.CfsExt {
 				return
-			}
-			if entry.Mode&syscall.S_IFMT == 0 {
-				// DT_UNKNOWN from the dirstream
-				st, err := syscallcompat.Fstatat2(f.intFd(), cName, unix.AT_SYMLINK_NOFOLLOW)
-				if err != nil {
-					// entry vanished
-					continue
-				}
-				entry.Mode = uint32(st.Mode) & syscall.S_IFMT
 			}
 			if entry.Mode&syscall.S_IFMT == syscall.S_IFDIR && f.cfsExtShadowed(cName) {
 				tlog.Warn.Printf("Readdirent: hiding directory %q: shadowed by %q", cName, cName+CfsExtSuffix)

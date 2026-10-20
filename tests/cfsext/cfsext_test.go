@@ -201,8 +201,9 @@ func TestRootConfName(t *testing.T) {
 	}
 }
 
-// A file may be named *.cfs (it is stored as *.cfs.cfs), a directory may not:
-// a cipher name ends in .cfs if and only if it is not a directory.
+// A file may be named *.cfs (it is stored as *.cfs.cfs), a directory may not
+// (in any letter case): a cipher name ends in .cfs if and only if it is not a
+// directory.
 func TestNamesEndingInCfs(t *testing.T) {
 	content := []byte("x.cfs content")
 	if err := os.WriteFile(pDir+"/x.cfs", content, 0600); err != nil {
@@ -219,18 +220,39 @@ func TestNamesEndingInCfs(t *testing.T) {
 	if !test_helpers.VerifyExistence(t, pDir+"/x.cfs") {
 		t.Error("x.cfs not visible")
 	}
+	// Only the lowercase suffix is special for files: x.CFS is stored as x.CFS.cfs
+	if err := os.WriteFile(pDir+"/x.CFS", content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !mustExist(t, cDir+"/x.CFS.cfs").Mode().IsRegular() {
+		t.Error("x.CFS.cfs is not a regular file")
+	}
+	mustNotExist(t, cDir+"/x.CFS")
+	got, err = os.ReadFile(pDir + "/x.CFS")
+	if err != nil || !bytes.Equal(got, content) {
+		t.Errorf("ReadFile x.CFS: %q, %v", got, err)
+	}
 	// mkdir of a name ending in .cfs
 	if err := os.Mkdir(pDir+"/d.cfs", 0700); !errors.Is(err, syscall.EINVAL) {
 		t.Errorf("mkdir d.cfs: want EINVAL, got %v", err)
 	}
 	mustNotExist(t, cDir+"/d.cfs")
 	mustNotExist(t, pDir+"/d.cfs")
+	// The directory rule ignores the letter case of the suffix
+	if err := os.Mkdir(pDir+"/d.CFS", 0700); !errors.Is(err, syscall.EINVAL) {
+		t.Errorf("mkdir d.CFS: want EINVAL, got %v", err)
+	}
+	mustNotExist(t, cDir+"/d.CFS")
+	mustNotExist(t, pDir+"/d.CFS")
 	// Renaming a directory to a name ending in .cfs
 	if err := os.Mkdir(pDir+"/dren", 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(pDir+"/dren", pDir+"/dren.cfs"); !errors.Is(err, syscall.EINVAL) {
 		t.Errorf("rename dren -> dren.cfs: want EINVAL, got %v", err)
+	}
+	if err := os.Rename(pDir+"/dren", pDir+"/dir.CFS"); !errors.Is(err, syscall.EINVAL) {
+		t.Errorf("rename dren -> dir.CFS: want EINVAL, got %v", err)
 	}
 	if !mustExist(t, pDir+"/dren").IsDir() {
 		t.Error("dren is not a directory")
@@ -239,6 +261,7 @@ func TestNamesEndingInCfs(t *testing.T) {
 		t.Error("cipher dren is not a directory")
 	}
 	mustNotExist(t, cDir+"/dren.cfs")
+	mustNotExist(t, cDir+"/dir.CFS")
 	// Renaming a file to a name ending in .cfs is fine
 	if err := os.WriteFile(pDir+"/fren", []byte("fren"), 0600); err != nil {
 		t.Fatal(err)
@@ -479,9 +502,9 @@ func TestConfWins(t *testing.T) {
 }
 
 // Non-directory cipher entries without suffix and directories ending in .cfs
-// are hidden (with a warning, hence -wpanic=0). When both "shadowdir" (dir)
-// and "shadowdir.cfs" (file) exist, the file wins and the directory is hidden.
-// -fsck reports all of them.
+// (in any letter case) are hidden (with a warning, hence -wpanic=0). When
+// both "shadowdir" (dir) and "shadowdir.cfs" (file) exist, the file wins and
+// the directory is hidden. -fsck reports all of them.
 func TestHiddenEntries(t *testing.T) {
 	c3 := test_helpers.InitFS(t, "-plaintextnames", "-cfsext")
 	p3 := c3 + ".mnt"
@@ -511,6 +534,9 @@ func TestHiddenEntries(t *testing.T) {
 	if err := os.Mkdir(c3+"/h.cfs", 0700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(c3+"/h.CFS", 0700); err != nil {
+		t.Fatal(err)
+	}
 	fi, err := os.Lstat(p3 + "/shadowdir")
 	if err != nil {
 		t.Fatal(err)
@@ -528,6 +554,9 @@ func TestHiddenEntries(t *testing.T) {
 	if _, err := os.Stat(p3 + "/h.cfs"); !errors.Is(err, syscall.ENOENT) {
 		t.Errorf("h.cfs: want ENOENT, got %v", err)
 	}
+	if _, err := os.Stat(p3 + "/h.CFS"); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("h.CFS: want ENOENT, got %v", err)
+	}
 	entries, err := os.ReadDir(p3)
 	if err != nil {
 		t.Fatal(err)
@@ -535,7 +564,7 @@ func TestHiddenEntries(t *testing.T) {
 	nShadow := 0
 	for _, e := range entries {
 		switch e.Name() {
-		case "plain.txt", "h.cfs":
+		case "plain.txt", "h.cfs", "h.CFS":
 			t.Errorf("%q should be hidden", e.Name())
 		case "shadowdir":
 			nShadow++
@@ -557,7 +586,7 @@ func TestHiddenEntries(t *testing.T) {
 		t.Errorf("fsck: want exit code %d, got %d", exitcodes.FsckErrors, code)
 	}
 	// fsck's own report line for each hidden cipher entry in the root dir
-	for _, cName := range []string{"plain.txt", "shadowdir", "h.cfs"} {
+	for _, cName := range []string{"plain.txt", "shadowdir", "h.cfs", "h.CFS"} {
 		want := fmt.Sprintf("fsck: corrupt entry in dir %q: %q", "", cName)
 		if !strings.Contains(string(out), want) {
 			t.Errorf("fsck output does not contain %q", want)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/rfjakob/gocryptfs/v2/internal/contentenc"
 	"github.com/rfjakob/gocryptfs/v2/internal/fusefrontend"
+	"github.com/rfjakob/gocryptfs/v2/internal/nametransform"
 	"github.com/rfjakob/gocryptfs/v2/internal/pathiv"
 	"github.com/rfjakob/gocryptfs/v2/internal/syscallcompat"
 	"github.com/rfjakob/gocryptfs/v2/internal/tlog"
@@ -56,8 +57,8 @@ func (n *Node) Lookup(ctx context.Context, cName string, out *fuse.EntryOut) (ch
 		if rn.args.CfsExt && len(cName) > unix.NAME_MAX {
 			return nil, syscall.ENAMETOOLONG
 		}
-		// -cfsext: ".cfs" alone would strip to an empty plaintext name
-		if rn.args.CfsExt && cName == fusefrontend.CfsExtSuffix {
+		// -cfsext: ".cfs", "..cfs" etc. strip to no valid plaintext name
+		if base, ok := strings.CutSuffix(cName, fusefrontend.CfsExtSuffix); rn.args.CfsExt && ok && nametransform.IsValidName(base) != nil {
 			return nil, syscall.ENOENT
 		}
 		d, errno = n.prepareAtSyscall(cName)
@@ -72,9 +73,12 @@ func (n *Node) Lookup(ctx context.Context, cName string, out *fuse.EntryOut) (ch
 	if err != nil {
 		return nil, fs.ToErrno(err)
 	}
-	// -cfsext: a virtual name ends in .cfs iff it is not a directory
-	if t == typeReal && rn.args.CfsExt && (st.Mode&syscall.S_IFMT == syscall.S_IFDIR) == strings.HasSuffix(cName, fusefrontend.CfsExtSuffix) {
-		return nil, syscall.ENOENT
+	// -cfsext: a non-directory carries the ".cfs" suffix, a directory never does (in any letter case)
+	if t == typeReal && rn.args.CfsExt {
+		isDir := st.Mode&syscall.S_IFMT == syscall.S_IFDIR
+		if (isDir && fusefrontend.HasCfsExtSuffix(cName)) || (!isDir && !strings.HasSuffix(cName, fusefrontend.CfsExtSuffix)) {
+			return nil, syscall.ENOENT
+		}
 	}
 	// Create new inode and fill `out`
 	ch = n.newChild(ctx, st, out)

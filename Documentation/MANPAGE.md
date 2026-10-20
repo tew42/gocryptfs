@@ -117,11 +117,13 @@ directories whose name ends in `.cfs`, including their contents) are omitted
 from the encrypted view with a warning. Non-directory entries without the
 `.cfs` suffix are not shown in the mount (`-fsck` reports them).
 `RENAME_EXCHANGE` between a directory and a non-directory fails with EINVAL.
-Directory names must not end in `.cfs`; mkdir and rename return EINVAL for
-such names. If the cipher directory is written by more than one mount at the
-same time (e.g. when it is synced between machines), a file and a directory
-of the same name can both appear; the file wins, the directory is hidden and
-`-fsck` reports it.
+Directory names must not end in `.cfs` in any letter case (Windows file
+systems are case-insensitive); mkdir and rename return EINVAL for such names,
+and such directories in CIPHERDIR are not shown. If the cipher directory is
+written by more than one mount at the same time (e.g. when it is synced
+between machines), a file and a directory of the same name can both appear;
+the file wins and the directory is hidden until the file is renamed or
+removed; `-fsck` reports it.
 
 The resulting `gocryptfs.conf` has "CfsExt" in "FeatureFlags"; older
 gocryptfs versions cannot mount it.

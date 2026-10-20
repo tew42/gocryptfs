@@ -2,7 +2,6 @@ package fusefrontend
 
 import (
 	"context"
-	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -488,8 +487,8 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 			isDir := uint32(st.Mode)&syscall.S_IFMT == syscall.S_IFDIR
 			cName2 = newName + CfsExtSuffix
 			if isDir {
-				// No .cfs directory names; a directory whiteout would be an unsuffixed char device
-				if strings.HasSuffix(newName, CfsExtSuffix) || flags&syscallcompat.RENAME_WHITEOUT != 0 {
+				// No .cfs directory names (in any letter case); a directory whiteout would be an unsuffixed char device
+				if HasCfsExtSuffix(newName) || flags&syscallcompat.RENAME_WHITEOUT != 0 {
 					return syscall.EINVAL
 				}
 				cName2 = newName

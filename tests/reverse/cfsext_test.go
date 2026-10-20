@@ -135,7 +135,8 @@ func TestCfsExtView(t *testing.T) {
 
 // TestCfsExtNotRepresentable checks that entries that cannot be shown with
 // -cfsext are skipped in the encrypted view: names that become longer than
-// 255 bytes with the ".cfs" suffix, and directories whose name ends in ".cfs".
+// 255 bytes with the ".cfs" suffix, and directories whose name ends in ".cfs"
+// in any letter case.
 func TestCfsExtNotRepresentable(t *testing.T) {
 	if !cfsext {
 		t.Skip("only for -cfsext")
@@ -175,8 +176,11 @@ func TestCfsExtNotRepresentable(t *testing.T) {
 	}
 
 	// Directory "x.cfs" next to file "x": "x.cfs" in the encrypted view is
-	// the file. Directory "y.cfs" alone is not visible at all.
+	// the file. Directories "y.cfs" and "x.CFS" alone are not visible at all.
 	if err := os.Mkdir(backingDir+"/x.cfs", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(backingDir+"/x.CFS", 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(backingDir+"/x", []byte("file x"), 0600); err != nil {
@@ -191,7 +195,7 @@ func TestCfsExtNotRepresentable(t *testing.T) {
 		switch n {
 		case "x.cfs":
 			nX++
-		case "y.cfs":
+		case "y.cfs", "x.CFS":
 			t.Errorf("%q should not be listed", n)
 		}
 	}
@@ -203,5 +207,12 @@ func TestCfsExtNotRepresentable(t *testing.T) {
 	}
 	if _, err := os.Lstat(mnt + "/y.cfs"); !errors.Is(err, syscall.ENOENT) {
 		t.Errorf("y.cfs: want ENOENT, got %v", err)
+	}
+	// Directory "x.CFS" is not representable; ".cfs" and "..cfs" strip to
+	// no valid plaintext name
+	for _, n := range []string{"x.CFS", ".cfs", "..cfs"} {
+		if _, err := os.Lstat(mnt + "/" + n); !errors.Is(err, syscall.ENOENT) {
+			t.Errorf("%q: want ENOENT, got %v", n, err)
+		}
 	}
 }

@@ -24,7 +24,7 @@ func (rn *RootNode) EncryptPath(plainPath string) (string, error) {
 	if rn.args.CfsExt {
 		// Directories keep their name, everything else (including
 		// entries that do not exist) gets CfsExtSuffix. Directories
-		// named *.cfs are not representable.
+		// named *.cfs (in any letter case) are not representable.
 		dirfd, err := syscallcompat.OpenDirNofollow(rn.args.Cipherdir, filepath.Dir(plainPath))
 		if err != nil {
 			return "", err
@@ -32,7 +32,7 @@ func (rn *RootNode) EncryptPath(plainPath string) (string, error) {
 		defer syscall.Close(dirfd)
 		st, err := syscallcompat.Fstatat2(dirfd, filepath.Base(plainPath), unix.AT_SYMLINK_NOFOLLOW)
 		if err == nil && st.Mode&syscall.S_IFMT == syscall.S_IFDIR {
-			if strings.HasSuffix(plainPath, fusefrontend.CfsExtSuffix) {
+			if fusefrontend.HasCfsExtSuffix(plainPath) {
 				return "", syscall.ENOENT
 			}
 			return plainPath, nil

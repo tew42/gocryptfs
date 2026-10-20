@@ -3,7 +3,6 @@ package fusefrontend_reverse
 import (
 	"context"
 	"fmt"
-	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -124,7 +123,8 @@ func (n *Node) readdirPlaintextnames(entries []fuse.DirEntry) (stream fs.DirStre
 
 // cfsExtEntries appends CfsExtSuffix to the names of all non-directory
 // entries (-cfsext). Entries whose name gets too long are dropped, as are
-// directories whose name ends in CfsExtSuffix (not representable).
+// directories whose name ends in CfsExtSuffix in any letter case (not
+// representable).
 // ".gocryptfs.reverse.conf" in the root dir is left alone because
 // readdirPlaintextnames maps it to "gocryptfs.conf".
 func (n *Node) cfsExtEntries(entries []fuse.DirEntry) []fuse.DirEntry {
@@ -133,7 +133,7 @@ func (n *Node) cfsExtEntries(entries []fuse.DirEntry) []fuse.DirEntry {
 	filtered := entries[:0]
 	for _, entry := range entries {
 		if entry.Mode&syscall.S_IFMT == syscall.S_IFDIR {
-			if strings.HasSuffix(entry.Name, fusefrontend.CfsExtSuffix) {
+			if fusefrontend.HasCfsExtSuffix(entry.Name) {
 				tlog.Warn.Printf("Readdir: skipping directory %q: name ends in %s", entry.Name, fusefrontend.CfsExtSuffix)
 				continue
 			}

@@ -17,6 +17,15 @@ import (
 // Args.CfsExt is set
 const CfsExtSuffix = ".cfs"
 
+// HasCfsExtSuffix reports whether name ends in CfsExtSuffix in any letter
+// case (ASCII). This is the test for directory names: Windows file systems
+// are case-insensitive, so cppcryptfs cannot represent a directory "x.CFS"
+// either. Non-directories are only ever written with the lowercase suffix.
+func HasCfsExtSuffix(name string) bool {
+	n := len(name) - len(CfsExtSuffix)
+	return n >= 0 && strings.ToLower(name[n:]) == CfsExtSuffix
+}
+
 // childType tells prepareAtSyscall what kind of directory entry `child` is.
 // Only relevant with -cfsext, where non-directories get the ".cfs" suffix.
 type childType uint8
@@ -44,7 +53,7 @@ func (rn *RootNode) cfsExtCName(name string, ct childType) string {
 
 // cfsExtResolve finds the cipher entry for plaintext `name` in `dirfd`:
 // "name.cfs" if it is not a directory, else "name" if it is a directory
-// and does not end in ".cfs".
+// and does not end in ".cfs" in any letter case.
 func (rn *RootNode) cfsExtResolve(dirfd int, name string) (cName string, st *syscall.Stat_t, errno syscall.Errno) {
 	st, err := syscallcompat.Fstatat2(dirfd, name+CfsExtSuffix, unix.AT_SYMLINK_NOFOLLOW)
 	if err == nil && uint32(st.Mode)&syscall.S_IFMT != syscall.S_IFDIR {
@@ -53,7 +62,7 @@ func (rn *RootNode) cfsExtResolve(dirfd int, name string) (cName string, st *sys
 	if err != nil && !errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.ENAMETOOLONG) {
 		return "", nil, fs.ToErrno(err)
 	}
-	if strings.HasSuffix(name, CfsExtSuffix) {
+	if HasCfsExtSuffix(name) {
 		// A suffixed name is never a directory
 		return "", nil, syscall.ENOENT
 	}
@@ -69,10 +78,10 @@ func (rn *RootNode) cfsExtResolve(dirfd int, name string) (cName string, st *sys
 
 // cfsExtPlainName returns the plaintext name of cipher entry `cName` with
 // file type `mode`, or false if the entry must be hidden.
-// Directories ending in ".cfs" are hidden.
+// Directories ending in ".cfs" in any letter case are hidden.
 func cfsExtPlainName(cName string, mode uint32) (string, bool) {
 	if mode&syscall.S_IFMT == syscall.S_IFDIR {
-		if strings.HasSuffix(cName, CfsExtSuffix) {
+		if HasCfsExtSuffix(cName) {
 			return "", false
 		}
 		return cName, true
